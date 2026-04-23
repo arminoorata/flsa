@@ -1,0 +1,317 @@
+/* Memo + Regulatory tab styles. Memo is designed to also print cleanly. */
+
+/* ── Memo container ────────────────────────────────────────── */
+
+.memo {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 40px;
+  box-shadow: var(--shadow-md);
+}
+
+@media (max-width: 640px) {
+  .memo { padding: 24px 20px; }
+}
+
+.memo-header {
+  text-align: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 28px;
+}
+
+.memo-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.memo-subtitle {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.memo-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+}
+
+.memo-section {
+  margin-bottom: 28px;
+}
+
+.memo-section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+/* Employee info table */
+.info-row {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--line);
+  font-size: 14px;
+}
+
+.info-row:last-child { border-bottom: none; }
+
+.info-row .label {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.info-row .value {
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .info-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+/* Classification recommendation box */
+.recommendation-box {
+  border: 2px solid var(--accent);
+  background: var(--accent-light);
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 8px;
+}
+
+.recommendation-heading {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.recommendation-body {
+  font-size: 15px;
+  color: var(--text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.recommendation-body strong { font-weight: 700; }
+
+/* Exemption analysis blocks */
+.exemption-block {
+  padding: 14px 16px;
+  border-radius: 7px;
+  border-left: 3px solid;
+  margin-bottom: 10px;
+}
+
+.exemption-block.pass {
+  background: var(--green-bg);
+  border-left-color: var(--green);
+}
+.exemption-block.fail {
+  background: var(--red-bg);
+  border-left-color: var(--red);
+}
+.exemption-block.warn {
+  background: var(--amber-bg);
+  border-left-color: var(--amber);
+}
+.exemption-block.skip {
+  background: var(--skip-bg);
+  border-left-color: var(--skip);
+}
+
+.exemption-header {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.exemption-block.pass .exemption-header { color: var(--green); }
+.exemption-block.fail .exemption-header { color: var(--red); }
+.exemption-block.warn .exemption-header { color: var(--amber); }
+.exemption-block.skip .exemption-header { color: var(--skip); }
+
+.exemption-summary {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+
+.exemption-details {
+  list-style: none;
+  padding-left: 18px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.exemption-details li {
+  padding: 2px 0;
+  position: relative;
+}
+
+.exemption-details li::before {
+  content: "•";
+  position: absolute;
+  left: -14px;
+  color: var(--text-muted);
+}
+
+/* Overtime rules */
+.ot-section {
+  margin-bottom: 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.ot-section strong { color: var(--text); font-weight: 700; }
+
+/* Risk flag blocks */
+.risk-block {
+  padding: 12px 14px;
+  background: var(--amber-bg);
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+/* Disclaimer */
+.disclaimer {
+  padding-top: 20px;
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ── Regulatory tab ────────────────────────────────────────── */
+
+.reg-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 22px 24px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.reg-panel-heading {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 16px;
+  letter-spacing: -0.005em;
+}
+
+.reg-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.reg-item:last-child { border-bottom: none; }
+.reg-item:first-child { padding-top: 0; }
+
+.reg-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.reg-item-body {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Threshold reference table */
+.threshold-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.threshold-table th,
+.threshold-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.threshold-table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.threshold-table td.mono {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.threshold-table td.notes {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .threshold-table th,
+  .threshold-table td {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+}
+
+/* ── Print overrides for memo ──────────────────────────────── */
+
+@media print {
+  .memo {
+    background: #fff !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    color: #000 !important;
+  }
+  .memo * { color: #000 !important; }
+  .memo-header,
+  .memo-section-heading,
+  .info-row,
+  .disclaimer {
+    border-color: #999 !important;
+  }
+  .recommendation-box {
+    background: #fff !important;
+    border: 1px solid #000 !important;
+  }
+  .exemption-block.pass { background: #fff !important; border-left: 2px solid #000 !important; }
+  .exemption-block.fail { background: #fff !important; border-left: 2px solid #000 !important; }
+  .exemption-block.warn { background: #f4f4f4 !important; border-left: 2px solid #000 !important; }
+  .exemption-block.skip { background: #fff !important; border-left: 2px solid #666 !important; }
+  .risk-block { background: #f4f4f4 !important; border-left: 2px solid #000 !important; }
+  .exemption-header { color: #000 !important; }
+}

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FLSA Exemption Classification Tool</title>
+  <meta name="description" content="Federal and state FLSA exemption classification for US employees. Internal HR tool." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/memo.css" />
+  <script>
+    /* Theme bootstrap: matches arminoorata.com pattern. Default dark. */
+    (function(){try{var s=localStorage.getItem('flsa-theme');var t=s||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+  </script>
+</head>
+<body>
+  <header class="app-header no-print">
+    <div class="app-header-inner">
+      <div class="app-title">
+        <span class="dot"></span>
+        <span>FLSA Exemption Classification Tool</span>
+      </div>
+      <div class="header-right">
+        <span class="version mono" id="version-label"></span>
+        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <nav class="tab-bar no-print" role="tablist">
+      <button class="tab active" data-tab="classify" role="tab" aria-selected="true">Classification Questionnaire</button>
+      <button class="tab" data-tab="regulatory" role="tab" aria-selected="false">Regulatory Landscape</button>
+    </nav>
+
+    <section id="tab-classify" class="tab-panel">
+      <div class="progress-bar no-print" id="progress-bar"></div>
+      <div id="content"></div>
+    </section>
+
+    <section id="tab-regulatory" class="tab-panel hidden">
+      <div id="regulatory-content"></div>
+    </section>
+  </main>
+
+  <!-- Data layer (order matters: no modules, plain globals) -->
+  <script src="data/constants.js"></script>
+  <script src="data/thresholds.js"></script>
+  <script src="data/states.js"></script>
+  <script src="data/regulatory.js"></script>
+  <script src="data/questions.js"></script>
+
+  <!-- Logic -->
+  <script src="js/evaluator.js"></script>
+  <script src="js/memo.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

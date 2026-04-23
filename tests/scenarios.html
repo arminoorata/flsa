@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FLSA Tool — Regression Scenarios</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 30px auto; padding: 0 20px; color: #222; }
+    h1 { margin-bottom: 8px; }
+    .meta { color: #666; font-size: 13px; margin-bottom: 20px; }
+    .result { border-left: 4px solid; padding: 10px 14px; margin-bottom: 8px; background: #fafafa; border-radius: 4px; }
+    .pass { border-color: #1a8c5b; }
+    .fail { border-color: #c73a3a; background: #fff3f3; }
+    .failures { color: #c73a3a; font-size: 13px; margin-top: 6px; white-space: pre-wrap; font-family: ui-monospace, monospace; }
+    .summary { margin-top: 20px; padding: 14px; background: #f0f0f0; border-radius: 6px; font-weight: 600; }
+    .source { font-size: 12px; color: #888; }
+  </style>
+</head>
+<body>
+  <h1>FLSA Tool — Regression Scenarios</h1>
+  <p class="meta">Run annually after threshold updates. Every scenario must pass.
+    5 canonical from spec/06-evaluation-logic.md + 3 proposed.</p>
+
+  <div id="results"></div>
+  <div id="summary" class="summary"></div>
+
+  <script src="../app/data/constants.js"></script>
+  <script src="../app/data/thresholds.js"></script>
+  <script src="../app/data/states.js"></script>
+  <script src="../app/data/regulatory.js"></script>
+  <script src="../app/data/questions.js"></script>
+  <script src="../app/js/evaluator.js"></script>
+  <script src="scenarios.js"></script>
+  <script>
+    const results = runAllScenarios();
+    let passed = 0;
+    const container = document.getElementById("results");
+    for (const r of results) {
+      const div = document.createElement("div");
+      div.className = "result " + (r.pass ? "pass" : "fail");
+      const icon = r.pass ? "✓" : "✗";
+      div.innerHTML = `<strong>${icon} Scenario ${r.id}: ${r.name}</strong>
+        <div class="source">${SCENARIOS[r.id - 1].source}</div>
+        ${r.failures.length ? `<div class="failures">${r.failures.map(f => "✗ " + f).join("\n")}</div>` : ""}`;
+      container.appendChild(div);
+      if (r.pass) passed++;
+    }
+    document.getElementById("summary").textContent = `${passed}/${results.length} scenarios passed.`;
+  </script>
+</body>
+</html>

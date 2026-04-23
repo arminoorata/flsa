@@ -1,0 +1,8 @@
+# Local dev
+.DS_Store
+*.log
+node_modules/
+.vercel/
+
+# Test artifacts
+/tests/*.tmp.html
