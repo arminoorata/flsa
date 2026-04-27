@@ -1,6 +1,14 @@
-/* Tool-wide constants. Update TOOL_VERSION_DATE whenever content changes. */
+/* Tool-wide constants.
 
-const TOOL_VERSION_DATE = "April 14, 2026";
+   TOOL_VERSION_DATE: when the tool's encoded legal data was last reviewed.
+   This is NOT today's date — it reflects when an HR/People Ops owner last
+   verified that thresholds, state rules, and regulatory narrative are
+   current. Update this value (and only this value, in this one file) when
+   you do an annual review or push a mid-year correction. The date flows to
+   the footer "Data last updated:" line, the memo header, and the
+   Regulatory tab. */
+
+const TOOL_VERSION_DATE = "April 26, 2026";
 
 const FEDERAL_HCE_THRESHOLD = 107432;
 

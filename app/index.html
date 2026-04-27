@@ -19,12 +19,27 @@
 <body>
   <header class="app-header no-print">
     <div class="app-header-inner">
-      <div class="app-title">
+      <a href="https://arminoorata.com" class="app-title">
         <span class="dot"></span>
-        <span>FLSA Exemption Classification Tool</span>
-      </div>
+        <span>FLSA Toolkit</span>
+      </a>
       <div class="header-right">
-        <span class="version mono" id="version-label"></span>
+        <div id="nav-menu" class="menu-cluster">
+          <nav class="menu-links" aria-label="Primary">
+            <a href="https://arminoorata.com">Home</a>
+            <a href="https://arminoorata.com/about">About</a>
+            <a href="https://arminoorata.com/frameworks">Frameworks</a>
+            <a href="https://arminoorata.com/tools">Tools</a>
+            <a href="https://arminoorata.com/connect">Connect</a>
+          </nav>
+          <button id="nav-menu-toggle" type="button" class="dot-button" aria-label="Open navigation" aria-expanded="false">
+            <span class="dot-grid" aria-hidden="true">
+              <span></span><span></span><span></span>
+              <span></span><span></span><span></span>
+              <span></span><span></span><span></span>
+            </span>
+          </button>
+        </div>
         <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
           <svg class="theme-icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
@@ -36,6 +51,10 @@
       </div>
     </div>
   </header>
+
+  <div class="topnotice no-print" role="note">
+    <strong>Not legal advice.</strong> This tool produces classification guidance based on encoded federal and state regulatory criteria. Final decisions are the user's responsibility. <a href="#" class="topnotice-link" id="open-disclaimer">Full disclaimer</a>.
+  </div>
 
   <main class="app-main">
     <nav class="tab-bar no-print" role="tablist">
@@ -52,6 +71,21 @@
       <div id="regulatory-content"></div>
     </section>
   </main>
+
+  <footer class="app-footer no-print">
+    <div class="app-footer-inner">
+      <p class="footer-disclaimer">
+        <strong>Disclaimer.</strong> This tool is provided for informational purposes only and does not constitute legal advice. Classifications produced are guidance based on encoded federal and state regulatory criteria current as of the data-version date below. Final classification decisions remain the user's responsibility. Always consult qualified employment counsel for borderline cases, complex multi-state scenarios, or any classification with material legal or financial implications. The author and operator of this tool assume no liability for decisions made using its output, for the accuracy of underlying regulatory data, or for any damages arising from its use. Use of this tool constitutes acceptance of these terms.
+      </p>
+      <div class="footer-bar">
+        <div class="footer-meta">
+          <p>Built by <a href="https://arminoorata.com" target="_blank" rel="noopener">Armi Noorata</a>.</p>
+          <p class="footer-version">Educational tool. Not HR or legal advice. <span class="mono" id="version-label"></span></p>
+        </div>
+        <p class="footer-domain">flsa.arminoorata.com</p>
+      </div>
+    </div>
+  </footer>
 
   <!-- Data layer (order matters: no modules, plain globals) -->
   <script src="data/constants.js"></script>

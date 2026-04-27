@@ -134,6 +134,57 @@ const Engine = (function () {
     }
   }
 
+  /* Jump to the first non-skipped question of a given stage. Used by the
+     clickable progress bar so the user can navigate back to any visited
+     section without losing prior answers. stageIdx 0 returns to Info,
+     stageIdx 6 returns to Results (only if results have been computed). */
+  function jumpToStage(stageIdx) {
+    if (stageIdx === 0) { state.stage = "info"; return; }
+    if (stageIdx === 6) {
+      if (state.results) state.stage = "results";
+      return;
+    }
+    state.stage = "questions";
+    _rebuildQuestions();
+    for (let i = 0; i < state.questions.length; i++) {
+      const q = state.questions[i];
+      if (q.stageIdx === stageIdx && !_isSkipped(q)) {
+        state.currentQuestionIdx = i;
+        return;
+      }
+    }
+    /* Stage has no non-skipped questions — fall through to next stage. */
+    for (let i = 0; i < state.questions.length; i++) {
+      const q = state.questions[i];
+      if (q.stageIdx >= stageIdx && !_isSkipped(q)) {
+        state.currentQuestionIdx = i;
+        return;
+      }
+    }
+  }
+
+  /* From results, go back to the last non-skipped question to edit. */
+  function goBackToLastQuestion() {
+    state.stage = "questions";
+    _rebuildQuestions();
+    for (let i = state.questions.length - 1; i >= 0; i--) {
+      if (!_isSkipped(state.questions[i])) {
+        state.currentQuestionIdx = i;
+        return;
+      }
+    }
+  }
+
+  /* Stages the user can click back into — strictly stages STRICTLY
+     BEFORE the current one. Mirrors the "done" set from getProgressState
+     so we never count auto-applied answers (which the user has not
+     actually navigated through) as "visited." On the intake screen this
+     returns an empty set, so no progress step is clickable. */
+  function getVisitedStages() {
+    const { done } = getProgressState();
+    return new Set(done);
+  }
+
   function _evaluate() {
     state.results = evaluateExemptions(state.answers, state.empData);
     state.overall = classifyOverall(state.results, state.empData);
@@ -192,9 +243,9 @@ const Engine = (function () {
     setEmpData, getEmpData, getStage,
     startQuestionnaire,
     currentQuestion, selectOption, getAnswer, getAllAnswers, isAutoAnswered,
-    nextQuestion, prevQuestion,
+    nextQuestion, prevQuestion, jumpToStage, goBackToLastQuestion,
     getResults,
     reset,
-    getProgressState
+    getProgressState, getVisitedStages
   };
 })();

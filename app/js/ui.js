@@ -25,22 +25,32 @@ const UI = (function () {
     const bar = document.getElementById("progress-bar");
     if (!bar) return;
     const { active, done } = Engine.getProgressState();
+    const visited = Engine.getVisitedStages();
     const parts = [];
     for (let i = 0; i < STAGES.length; i++) {
       const isDone = done.indexOf(i) !== -1;
       const isActive = i === active;
+      const isClickable = visited.has(i) && !isActive;
       const cls = isDone ? "done" : isActive ? "active" : "future";
       const marker = isDone ? "✓" : String(i + 1);
-      parts.push(`<div class="progress-step ${cls}">
-        <span class="progress-dot">${marker}</span>
-        <span class="progress-label">${escapeHtml(STAGES[i])}</span>
-      </div>`);
+      const tagOpen = isClickable
+        ? `<button type="button" class="progress-step ${cls} clickable" data-stage="${i}" title="Jump back to ${escapeHtml(STAGES[i])}">`
+        : `<div class="progress-step ${cls}">`;
+      const tagClose = isClickable ? "</button>" : "</div>";
+      parts.push(`${tagOpen}<span class="progress-dot">${marker}</span><span class="progress-label">${escapeHtml(STAGES[i])}</span>${tagClose}`);
       if (i < STAGES.length - 1) {
         const connDone = done.indexOf(i) !== -1 && (done.indexOf(i + 1) !== -1 || i + 1 === active);
         parts.push(`<div class="progress-connector ${connDone ? "done" : ""}"></div>`);
       }
     }
     bar.innerHTML = parts.join("");
+    bar.querySelectorAll(".progress-step.clickable").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const stage = parseInt(btn.dataset.stage, 10);
+        Engine.jumpToStage(stage);
+        renderApp();
+      });
+    });
   }
 
   /* ── Intake form ───────────────────────────────────────── */
@@ -253,7 +263,10 @@ const UI = (function () {
     const content = document.getElementById("content");
     content.innerHTML = `
       <div class="btn-row no-print" id="memo-actions">
-        <button class="btn" id="new-btn">← Start New Classification</button>
+        <div class="btn-row-left">
+          <button class="btn" id="back-to-questions-btn">← Back to questions</button>
+          <button class="btn" id="new-btn">Start new classification</button>
+        </div>
         <div class="btn-row-right">
           <button class="btn" id="copy-btn">Copy Memo</button>
           <button class="btn" id="download-btn">Download HTML</button>
@@ -263,7 +276,13 @@ const UI = (function () {
       ${Memo.renderHTML(emp, results, overall, riskFlags)}
     `;
 
+    document.getElementById("back-to-questions-btn").addEventListener("click", () => {
+      Engine.goBackToLastQuestion();
+      renderApp();
+    });
+
     document.getElementById("new-btn").addEventListener("click", () => {
+      if (!confirm("Start a new classification? This will clear all current answers.")) return;
       Engine.reset();
       renderApp();
     });
@@ -273,15 +292,32 @@ const UI = (function () {
     });
 
     document.getElementById("copy-btn").addEventListener("click", (e) => {
+      const btn = e.currentTarget;
       const text = Memo.renderText(emp, results, overall, riskFlags);
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = e.target;
-        const originalText = btn.textContent;
-        btn.textContent = "Copied!";
-        setTimeout(() => { btn.textContent = originalText; }, 2000);
-      }).catch(() => {
-        alert("Could not copy to clipboard. Please use Print to save as PDF.");
-      });
+      const flash = (msg) => {
+        const original = btn.textContent;
+        btn.textContent = msg;
+        setTimeout(() => { btn.textContent = original; }, 2000);
+      };
+      const fallback = () => {
+        /* Older browsers + non-secure contexts: temp textarea + execCommand. */
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        let ok = false;
+        try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        flash(ok ? "Copied!" : "Copy failed — use Print");
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => flash("Copied!")).catch(fallback);
+      } else {
+        fallback();
+      }
     });
 
     document.getElementById("download-btn").addEventListener("click", () => {
@@ -388,6 +424,44 @@ const UI = (function () {
     });
   }
 
+  /* 9-dot nav menu — same open/close behavior as arminoorata.com,
+     fair.arminoorata.com, signs.arminoorata.com. Click outside or
+     press Escape to close. */
+  function installNavMenu() {
+    const cluster = document.getElementById("nav-menu");
+    const toggle = document.getElementById("nav-menu-toggle");
+    if (!cluster || !toggle) return;
+
+    let open = false;
+    const setOpen = (next) => {
+      open = next;
+      cluster.classList.toggle("open", open);
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+    };
+
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setOpen(!open);
+    });
+
+    document.addEventListener("mousedown", (e) => {
+      if (!open) return;
+      if (!cluster.contains(e.target)) setOpen(false);
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (open && e.key === "Escape") {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+
+    cluster.querySelectorAll(".menu-links a").forEach((link) => {
+      link.addEventListener("click", () => setOpen(false));
+    });
+  }
+
   /* ── Main render dispatch ──────────────────────────────── */
 
   function renderApp() {
@@ -399,11 +473,23 @@ const UI = (function () {
   }
 
   function init() {
-    document.getElementById("version-label").textContent = `Last Updated: ${TOOL_VERSION_DATE}`;
+    document.getElementById("version-label").textContent = `Data last updated: ${TOOL_VERSION_DATE}`;
     installTabs();
     installThemeToggle();
+    installNavMenu();
     installKeyboardShortcuts();
+    installDisclaimerScroll();
     renderApp();
+  }
+
+  function installDisclaimerScroll() {
+    const link = document.getElementById("open-disclaimer");
+    if (!link) return;
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const footer = document.querySelector(".app-footer");
+      if (footer) footer.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   return { init, renderApp, renderRegulatory };

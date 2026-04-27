@@ -52,7 +52,7 @@ inject("js/ui.js");
 
 /* Expose module globals so this test can probe them. */
 const expose = document.createElement("script");
-expose.textContent = "window.UI = UI; window.Engine = Engine; window.Memo = Memo;";
+expose.textContent = "window.UI = UI; window.Engine = Engine; window.Memo = Memo; window.TOOL_VERSION_DATE = TOOL_VERSION_DATE;";
 document.body.appendChild(expose);
 
 if (!window.UI) {
@@ -66,7 +66,11 @@ window.UI.init();
 let failures = [];
 function assert(cond, msg) { if (!cond) failures.push(msg); }
 
-assert(document.getElementById("version-label").textContent.includes("April 14, 2026"), "version label missing");
+assert(document.getElementById("version-label").textContent.includes("Data last updated:"), "version label missing or wrong text");
+assert(document.getElementById("version-label").textContent.includes(window.TOOL_VERSION_DATE), "version label missing TOOL_VERSION_DATE");
+assert(document.querySelector(".app-footer"), "footer missing");
+assert(document.querySelector(".topnotice"), "top notice (disclaimer) missing");
+assert(document.getElementById("nav-menu-toggle"), "nav menu button missing");
 assert(document.getElementById("start-btn"), "start button missing on intake");
 
 /* Fill intake for scenario 3 (CT Senior Director). */

@@ -57,7 +57,12 @@ const Memo = (function () {
 
   function _disclaimerText() {
     const subject = (typeof ORG_NAME === "string" && ORG_NAME.trim()) ? ORG_NAME.trim() : "Organizations";
-    return `This tool provides guidance based on encoded federal and state regulatory criteria current as of ${TOOL_VERSION_DATE}. It is not a substitute for legal advice. Consult employment counsel for borderline cases, complex multi-state scenarios, or when state-specific nuances require interpretation. ${subject} should perform annual reviews of all exempt classifications, with particular attention to state threshold changes effective each January 1.`;
+    /* Mirrors the in-app footer disclaimer so legal-protection language
+       travels with any printed, copied, or downloaded memo artifact —
+       not just the live web view. Spec/07 verbatim sentence is preserved
+       as the second sentence; user-responsibility + no-liability language
+       added per user requirement to limit liability. */
+    return `This tool is provided for informational purposes only and does not constitute legal advice. It provides guidance based on encoded federal and state regulatory criteria current as of ${TOOL_VERSION_DATE}. Final classification decisions remain the user's responsibility. Consult qualified employment counsel for borderline cases, complex multi-state scenarios, when state-specific nuances require interpretation, or for any classification with material legal or financial implications. ${subject} should perform annual reviews of all exempt classifications, with particular attention to state threshold changes effective each January 1. The author and operator of this tool assume no liability for decisions made using its output, for the accuracy of underlying regulatory data, or for any damages arising from its use. Use of this tool, and reliance on its output, constitutes acceptance of these terms.`;
   }
 
   /* ── Shared section builders ───────────────────────────── */
@@ -127,7 +132,7 @@ const Memo = (function () {
         <div class="memo-header">
           <h1 class="memo-title">FLSA Exemption Classification Memo</h1>
           <div class="memo-subtitle">${escapeHtml(orgLine)}</div>
-          <div class="memo-meta">Generated: ${escapeHtml(genDate)} &nbsp;|&nbsp; Tool Version: ${escapeHtml(TOOL_VERSION_DATE)}</div>
+          <div class="memo-meta">Generated: ${escapeHtml(genDate)} &nbsp;|&nbsp; Data last updated: ${escapeHtml(TOOL_VERSION_DATE)}</div>
         </div>
 
         <div class="memo-section">
@@ -175,7 +180,7 @@ const Memo = (function () {
     const lines = [];
     lines.push("FLSA Exemption Classification Memo");
     lines.push(orgLine);
-    lines.push(`Generated: ${genDate} | Tool Version: ${TOOL_VERSION_DATE}`);
+    lines.push(`Generated: ${genDate} | Data last updated: ${TOOL_VERSION_DATE}`);
     lines.push("");
     lines.push("EMPLOYEE / ROLE INFORMATION");
     lines.push(`Classification Type: ${_classTypeLabel(emp.classType)}`);
