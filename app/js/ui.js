@@ -478,18 +478,7 @@ const UI = (function () {
     installThemeToggle();
     installNavMenu();
     installKeyboardShortcuts();
-    installDisclaimerScroll();
     renderApp();
-  }
-
-  function installDisclaimerScroll() {
-    const link = document.getElementById("open-disclaimer");
-    if (!link) return;
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      const footer = document.querySelector(".app-footer");
-      if (footer) footer.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
   }
 
   return { init, renderApp, renderRegulatory };

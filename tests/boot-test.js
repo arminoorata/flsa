@@ -69,7 +69,8 @@ function assert(cond, msg) { if (!cond) failures.push(msg); }
 assert(document.getElementById("version-label").textContent.includes("Data last updated:"), "version label missing or wrong text");
 assert(document.getElementById("version-label").textContent.includes(window.TOOL_VERSION_DATE), "version label missing TOOL_VERSION_DATE");
 assert(document.querySelector(".app-footer"), "footer missing");
-assert(document.querySelector(".topnotice"), "top notice (disclaimer) missing");
+assert(document.querySelector(".footer-disclaimer"), "footer disclaimer missing");
+assert(document.querySelector(".footer-bar"), "footer bar (attribution + domain) missing");
 assert(document.getElementById("nav-menu-toggle"), "nav menu button missing");
 assert(document.getElementById("start-btn"), "start button missing on intake");
 
