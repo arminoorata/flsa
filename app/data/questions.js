@@ -343,15 +343,36 @@ function buildQuestions(empData, answers) {
     skipIf: (a) => a.admin_salary === "no"
   });
 
-  /* Q11: admin_state_restrict — conditional: only if strict admin state */
-  if (STRICT_ADMIN_STATES.indexOf(stateKey) !== -1) {
+  /* Q11: admin_state_restrict — fires whenever any in-scope state is
+     strict-admin, not just when the analysis state is. A CA-primary +
+     NY-additional employee whose composite-score routing landed on CA
+     still needs to see this warning, because NY's strict-admin rule
+     binds wherever the employee actually works in NY. */
+  const adminStrictBindingLabel = (function () {
+    const inScope = [];
+    const primary = (empData && empData.primaryWorkState) || (empData && empData.workState) || "";
+    if (primary) inScope.push(primary);
+    if (empData && Array.isArray(empData.additionalStates)) {
+      for (const s of empData.additionalStates) {
+        if (s && inScope.indexOf(s) === -1) inScope.push(s);
+      }
+    }
+    if (analysisState && inScope.indexOf(analysisState) === -1) inScope.push(analysisState);
+    for (const s of inScope) {
+      if (STRICT_ADMIN_STATES.indexOf(getStateKey(s)) !== -1) {
+        return getThreshold(s).label;
+      }
+    }
+    return null;
+  })();
+  if (adminStrictBindingLabel) {
     questions.push({
       id: "admin_state_restrict",
       exemption: "Administrative",
       stageIdx: 3,
-      label: `${threshold.label}: Stricter Administrative Duties Test`,
-      text: `In ${threshold.label}, the administrative exemption CANNOT be satisfied by duties that primarily relate to your customers. The primary duty must relate to the management or general business operations of THE EMPLOYER ITSELF. If you selected "customer operations" in the previous question, this employee likely does not qualify for the administrative exemption under state law.`,
-      why: `${threshold.label} has a narrower interpretation of the administrative exemption than the federal standard. Under federal law, work related to a customer's management operations can qualify. Under ${threshold.label} law, it generally cannot.`,
+      label: `${adminStrictBindingLabel}: Stricter Administrative Duties Test`,
+      text: `In ${adminStrictBindingLabel}, the administrative exemption CANNOT be satisfied by duties that primarily relate to your customers. The primary duty must relate to the management or general business operations of THE EMPLOYER ITSELF. If you selected "customer operations" in the previous question, this employee likely does not qualify for the administrative exemption under state law.`,
+      why: `${adminStrictBindingLabel} has a narrower interpretation of the administrative exemption than the federal standard. Under federal law, work related to a customer's management operations can qualify. Under ${adminStrictBindingLabel} law, it generally cannot.`,
       options: [
         { value: "acknowledged", label: "Understood, continue" }
       ],

@@ -600,6 +600,78 @@ assert(otLabels.indexOf("California") !== -1, `multi-state CA+CO must include Ca
 assert(otLabels.indexOf("Colorado") !== -1, `multi-state CA+CO must include Colorado OT section, got [${otLabels.join(", ")}]`);
 assert(otLabels.indexOf("Multi-State Allocation") !== -1, `multi-state must include allocation reminder, got [${otLabels.join(", ")}]`);
 
+/* Regression for codex post-r7-followup Critical: multi-state CA
+   primary + NY-NYC additional with customer_ops admin at $100K.
+   Composite-score routing picks CA (HCE-reject bonus dominates), but
+   NY's strict-admin DUTIES rule must still apply because NY is in
+   scope. Previously returned EXEMPT under "California (federal
+   standard)"; now must FAIL admin → non-exempt. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Customer Success Mgr", workState: "California", additionalStates: ["New York (NYC/Nassau/Suffolk/Westchester)"], baseSalary: 100000, totalComp: 100000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "no");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "yes");
+window.Engine.selectOption("admin_biz_ops", "customer_ops");
+window.Engine.selectOption("admin_state_restrict", "acknowledged");
+window.Engine.selectOption("admin_discretion", "yes");
+window.Engine.selectOption("exec_salary", "yes");
+window.Engine.selectOption("exec_manage", "no");
+window.Engine.selectOption("prof_salary", "yes");
+window.Engine.selectOption("prof_advanced", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const canyAdmin = window.Engine.getResults();
+assert(canyAdmin.results.admin.status === "fail", `CA primary + NY-NYC additional with customer_ops MUST fail admin (NY strict-admin in scope), got ${canyAdmin.results.admin.status}: ${canyAdmin.results.admin.summary}`);
+assert(canyAdmin.overall.outcome === "non-exempt", `CA+NY customer_ops admin must end non-exempt, got ${canyAdmin.overall.outcome}`);
+/* The fail summary must name New York, not California, since NY is the binding strict state. */
+assert(canyAdmin.results.admin.summary.indexOf("New York") !== -1, `admin fail summary must name the binding strict state (New York), got: ${canyAdmin.results.admin.summary}`);
+
+/* Regression: admin_state_restrict question must fire when ANY in-
+   scope state is strict-admin, not just when the analysis state is. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Consultant", workState: "California", additionalStates: ["Oregon"], baseSalary: 100000, totalComp: 100000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+const canyQuestions = (function() {
+  /* Drive the engine to surface the admin_state_restrict question. */
+  window.Engine.selectOption("hce_start", "no");
+  window.Engine.selectOption("comp_role", "no");
+  window.Engine.selectOption("admin_salary", "yes");
+  window.Engine.selectOption("admin_biz_ops", "customer_ops");
+  /* Walk forward and capture the next question id. */
+  const seen = [];
+  for (let i=0; i<20; i++) {
+    const q = window.Engine.currentQuestion();
+    if (!q) break;
+    seen.push(q.id);
+    if (q.id === "admin_state_restrict") return seen;
+    window.Engine.nextQuestion();
+  }
+  return seen;
+})();
+assert(canyQuestions.indexOf("admin_state_restrict") !== -1, `CA+OR (Oregon strict) must surface admin_state_restrict question even though analysis routes to CA, got sequence ${canyQuestions.join(", ")}`);
+
+/* Regression for codex post-r7-followup Medium: federal-only Computer
+   risk flag must name the Computer-routed state (CA), not the general
+   analysisState (WA). */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Software Engineer", workState: "California", additionalStates: ["Washington"], baseSalary: 100000, totalComp: 100000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "no");
+window.Engine.selectOption("comp_role", "yes");
+/* comp_salary auto-answer should be federal_only (meets fed, not CA). */
+window.Engine.selectOption("comp_duties", "design_dev");
+window.Engine.selectOption("comp_independent", "yes");
+window.Engine.selectOption("admin_salary", "no");
+window.Engine.selectOption("exec_salary", "no");
+window.Engine.selectOption("prof_salary", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const cawaFlags = window.Engine.getResults().riskFlags;
+const fedOnlyFlag = cawaFlags.find(f => f.title.indexOf("federal-only threshold") !== -1);
+assert(fedOnlyFlag, "federal-only Computer flag should fire for CA+WA $100K computer salary");
+assert(fedOnlyFlag && fedOnlyFlag.body.indexOf("California") !== -1, `federal-only flag must name California (Computer-routed state), got: ${fedOnlyFlag && fedOnlyFlag.body}`);
+
 /* Regression: single-state employee should NOT see the multi-state
    allocation reminder. */
 window.Engine.reset();

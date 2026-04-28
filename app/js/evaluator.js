@@ -276,8 +276,37 @@ function evaluateComputer(answers, empData, threshold) {
 
 function evaluateAdmin(answers, empData, stateKey, threshold) {
   const title = "Administrative";
-  const stateLabel = threshold.label;
-  const inStrictState = STRICT_ADMIN_STATES.indexOf(stateKey) !== -1;
+  /* Multi-state strict-admin check: NY/OR have a stricter admin DUTIES
+     test (customer-facing work cannot satisfy admin) that's independent
+     of any salary/threshold ranking. A CA-primary + NY-additional
+     employee whose composite-score routing landed on CA must STILL
+     fail customer_ops admin, because NY's rule applies wherever the
+     employee actually works in NY. The most-protective standard says:
+     if ANY in-scope state is strict-admin, the strict rule binds.
+
+     Regression scope: codex post-r7 follow-up Critical. Previously
+     only the analysis state was checked, so CA+NY customer_ops admin
+     at $100K returned EXEMPT under "California (federal standard)"
+     even though the employee's NY presence would have invalidated it. */
+  const inScopeStates = [];
+  const primary = (empData && empData.primaryWorkState) || (empData && empData.workState) || "";
+  if (primary) inScopeStates.push(primary);
+  if (empData && Array.isArray(empData.additionalStates)) {
+    for (const s of empData.additionalStates) {
+      if (s && inScopeStates.indexOf(s) === -1) inScopeStates.push(s);
+    }
+  }
+  const analysis = (empData && empData.analysisState) || "";
+  if (analysis && inScopeStates.indexOf(analysis) === -1) inScopeStates.push(analysis);
+  let strictBindingLabel = null;
+  for (const s of inScopeStates) {
+    if (STRICT_ADMIN_STATES.indexOf(getStateKey(s)) !== -1) {
+      strictBindingLabel = getThreshold(s).label;
+      break;
+    }
+  }
+  const inStrictState = strictBindingLabel !== null;
+  const stateLabel = strictBindingLabel || threshold.label;
 
   if (answers.admin_salary === "no") {
     return {
@@ -296,10 +325,19 @@ function evaluateAdmin(answers, empData, stateKey, threshold) {
     };
   }
   if (answers.admin_biz_ops === "customer_ops" && inStrictState) {
+    /* If the strict-admin state isn't the routed analysis state (i.e.,
+       multi-state employee whose primary won composite-score routing
+       but a strict-admin state is also in scope), name it explicitly
+       so the user can see why admin failed despite their primary's
+       rules being more permissive. */
+    const isMultiStateBinding = strictBindingLabel && strictBindingLabel !== threshold.label;
+    const suffix = isMultiStateBinding
+      ? ` (the employee also works in ${stateLabel}, whose stricter rule governs under the most-protective standard)`
+      : "";
     return {
       status: "fail",
       title,
-      summary: `Primary duty relates to customer operations. ${stateLabel} does not allow the administrative exemption for customer-facing duties.`,
+      summary: `Primary duty relates to customer operations. ${stateLabel} does not allow the administrative exemption for customer-facing duties${suffix}.`,
       details: [
         "Salary test: PASS",
         `Business operations test: FAIL under ${stateLabel} law (customer-facing)`,
@@ -642,6 +680,27 @@ function generateRiskFlags(answers, empData, results) {
     return s === "pass" || s === "warn";
   }
 
+  /* For any flag that names the state binding the Computer exemption,
+     use the per-exemption Computer-routed state — NOT analysisState.
+     The Computer evaluator routes salary cases to CA when CA's $122,573
+     is the binding constraint, so a "federal-only threshold met" flag
+     in a CA+WA salary case must say "NOT California", not "NOT
+     Washington". Falls back to the analysis-state label for single-
+     state cases. Regression for codex post-r7-followup Medium. */
+  const _computerRoutedThreshold = (function () {
+    const primaryS = (empData && empData.primaryWorkState) || (empData && empData.workState) || "";
+    const additionalS = (empData && empData.additionalStates && Array.isArray(empData.additionalStates))
+      ? empData.additionalStates.filter(s => s && s !== primaryS)
+      : [];
+    if (additionalS.length === 0) return threshold;
+    if (typeof getMostProtectiveStateForComputer === "function") {
+      const compState = getMostProtectiveStateForComputer([primaryS].concat(additionalS), payBasis);
+      if (compState) return getThreshold(compState);
+    }
+    return threshold;
+  })();
+  const computerStateLabel = _computerRoutedThreshold.label;
+
   if (payBasis === "day_rate") {
     /* Day-rate identifies any case where the salary-basis test fails
        UNLESS 541.604(b) is documented. The 541.604(b) path requires a
@@ -702,8 +761,8 @@ function generateRiskFlags(answers, empData, results) {
        Any other claimed EAP under hourly pay needs salary basis or a
        541.604(b) guarantee. */
     if (_isClaimed("computer")) {
-      const stateClause = (stateKey !== "federal" && threshold.computerHourly)
-        ? ` (and ${stateLabel} state minimum: $${_fmt(threshold.computerHourly)}/hour)`
+      const stateClause = (_computerRoutedThreshold.computerHourly)
+        ? ` (and ${computerStateLabel} state minimum: $${_fmt(_computerRoutedThreshold.computerHourly)}/hour)`
         : "";
       flags.push(_flag(
         "low",
@@ -752,7 +811,7 @@ function generateRiskFlags(answers, empData, results) {
     flags.push(_flag(
       "high",
       "Computer exemption: federal-only threshold met",
-      `Employee meets federal computer employee threshold but NOT ${stateLabel} state threshold. Apply the more protective state standard.`
+      `Employee meets federal computer employee threshold but NOT ${computerStateLabel} state threshold. Apply the more protective state standard.`
     ));
   }
 

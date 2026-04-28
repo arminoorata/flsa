@@ -1062,6 +1062,55 @@ const SCENARIOS = [
     }
   },
 
+  /* Scenario 28: Multi-state CA primary + NY-NYC additional with
+     customer_ops admin at $100K. Composite-score routing lands on CA
+     (CA's HCE-rejection +$200K bonus dominates), but NY-NYC's strict-
+     admin rule MUST still apply because NY is in scope and strict-
+     admin is a duties-test rule that binds wherever the employee
+     actually works in NY. Previously this returned EXEMPT under
+     "California (federal standard)" — now must FAIL admin and
+     produce a non-exempt outcome. Regression for codex post-r7
+     follow-up Critical: multi-state admin false-exempt. */
+  {
+    id: 28,
+    name: "Multi-state CA primary + NY-NYC additional, customer_ops admin (NY's strict rule binds)",
+    source: "proposed (codex post-r7-followup Critical: multi-state admin must fail customer_ops)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Customer Success Manager",
+      workState: "California",
+      additionalStates: ["New York (NYC/Nassau/Suffolk/Westchester)"],
+      analysisState: "California",
+      primaryWorkState: "California",
+      baseSalary: 100000,
+      totalComp: 100000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "customer_ops",
+      admin_state_restrict: "acknowledged",
+      admin_discretion: "yes",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "skip",   /* CA rejects HCE shortcut */
+      computer: "skip",
+      admin: "fail",   /* NY's strict-admin rule blocks customer_ops */
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "non-exempt"
+    }
+  },
+
   /* Scenario 13: Reclass exempt → non-exempt with currentClass=exempt.
      Should produce the dedicated CRITICAL reclass flag for the
      direction of change. */
