@@ -96,6 +96,7 @@ function evaluateComputer(answers, empData, threshold) {
   const stateLabel = threshold.label;
   const payBasis = (empData && empData.payBasis) || "";
   const hourlyRate = (empData && empData.hourlyRate) || 0;
+  const baseSalary = (empData && empData.baseSalary) || 0;
 
   if (answers.comp_role === "no") {
     return {
@@ -221,6 +222,42 @@ function evaluateComputer(answers, empData, threshold) {
           "Independence/skill test: PASS"
         ]
       };
+    }
+    /* Salary-basis revalidation. The auto-answer path in questions.js
+       computes Q6 ("comp_salary") against the per-exemption Computer
+       routing state, but the user can also manually answer "yes". The
+       evaluator is the source of truth: re-validate baseSalary against
+       the actual computer-routed threshold here so a $100K answer of
+       "yes" does NOT slip past CA's $122,573 minimum just because Q6
+       was built (or the user answered) against a less-strict state. */
+    if (payBasis === "salary" || payBasis === "" || payBasis === undefined) {
+      if (baseSalary && baseSalary < FEDERAL_EAP_ANNUAL) {
+        return {
+          status: "fail",
+          title,
+          summary: `Salary ($${_fmt(baseSalary)}/year) is below the federal computer-employee minimum of $${_fmt(FEDERAL_EAP_ANNUAL)}/year ($${_fmt(FEDERAL_EAP_WEEKLY)}/week).`,
+          details: [
+            "Role type: Computer-related",
+            "Compensation test: FAIL (salary below federal threshold)",
+            "Duties test: PASS",
+            "Independence/skill test: PASS"
+          ]
+        };
+      }
+      if (threshold.computerSalaryAnnual && baseSalary && baseSalary < threshold.computerSalaryAnnual) {
+        return {
+          status: "warn",
+          title,
+          summary: `Salary ($${_fmt(baseSalary)}/year) meets the federal $${_fmt(FEDERAL_EAP_ANNUAL)}/year minimum but NOT the ${stateLabel} state minimum of $${_fmt(threshold.computerSalaryAnnual)}/year for the computer-employee exemption. Apply the more protective standard: classify as NON-EXEMPT for overtime purposes.`,
+          details: [
+            "Role type: Computer-related",
+            "Federal compensation: PASS",
+            `${stateLabel} compensation: FAIL`,
+            "Duties test: PASS",
+            "Independence/skill test: PASS"
+          ]
+        };
+      }
     }
     return {
       status: "pass",
@@ -804,12 +841,20 @@ function generateRiskFlags(answers, empData, results) {
          no pass but at least one borderline. The directional flag must
          only fire when the recommendation is unambiguous; "review" must
          NOT be reframed as non-exempt because the suggested action is
-         "wait for legal review", not "convert and pay back wages". */
+         "wait for legal review", not "convert and pay back wages".
+
+         A critical-severity flag earlier in this same pass (Helix day-
+         rate, hourly-incompatible-with-EAP, fee-basis-Executive) blocks
+         classifyOverall from returning "exempt" — so the directional
+         "Non-Exempt → Exempt" reclass flag must NOT fire either. The
+         reclass-uncertain flag below picks up the ambiguous case
+         instead. */
       const passing = order.filter(k => results[k] && results[k].status === "pass");
       const borderline = order.filter(k => results[k] && results[k].status === "warn");
-      const recommendsExempt = passing.length > 0;
+      const hasCriticalSoFar = flags.some(f => f && f.severity === "critical");
+      const recommendsExempt = passing.length > 0 && !hasCriticalSoFar;
       const recommendsNonExempt = passing.length === 0 && borderline.length === 0;
-      const recommendsReview = passing.length === 0 && borderline.length > 0;
+      const recommendsReview = !recommendsExempt && !recommendsNonExempt;
 
       if (currentClass === "exempt" && recommendsNonExempt) {
         flags.push(_flag(
@@ -898,26 +943,67 @@ function computeConfidence(results, overall, riskFlags, empData) {
   return { level, reasons };
 }
 
+/* Per-state OT rule blurbs. Encoded for the states whose OT rules
+   meaningfully diverge from the federal weekly-only rule. States not
+   in this map fall under federal weekly OT only (no extra section). */
+const _STATE_OT_RULES = {
+  california: "Overtime required for more than 8 hours in a day AND more than 40 hours in a week. Double time required for more than 12 hours in a day and more than 8 hours on the 7th consecutive day in a workweek.",
+  colorado: "Overtime required for more than 12 hours in a day OR more than 40 hours in a week (note: different from California's 8-hour daily trigger).",
+  minnesota: "Minnesota Fair Labor Standards Act requires overtime after 48 hours in a workweek for some employers (rather than 40), but federal weekly OT after 40 still applies to FLSA-covered employees — apply the more protective standard.",
+  new_york_nyc: "New York requires overtime at 1.5x the regular rate after 40 hours in a workweek. Manual workers must be paid weekly. Domestic workers and residential employees have additional protections.",
+  new_york_other: "New York requires overtime at 1.5x the regular rate after 40 hours in a workweek. Manual workers must be paid weekly. Domestic workers and residential employees have additional protections.",
+  oregon: "Oregon generally follows federal weekly OT (after 40 hours) but has industry-specific daily OT (e.g., manufacturing, canneries). Verify industry-specific rules before scheduling 10+ hour days.",
+  washington: "Washington follows federal weekly OT (after 40 hours). State EAP salary thresholds are higher than federal — confirm exemption status separately if base salary is between federal and Washington minimums."
+};
+
 function generateOvertimeRules(empData) {
   const analysisState = (empData && empData.analysisState) || (empData && empData.workState) || "";
-  const stateKey = getStateKey(analysisState);
+  const primary = (empData && empData.primaryWorkState) || (empData && empData.workState) || "";
+  const additional = (empData && empData.additionalStates && Array.isArray(empData.additionalStates))
+    ? empData.additionalStates.filter(s => s && s !== primary)
+    : [];
   const sections = [];
   sections.push({
     label: "Federal",
     text: "Overtime required for non-exempt employees working more than 40 hours in a workweek at 1.5x the regular rate of pay."
   });
-  if (stateKey === "california") {
+
+  /* Iterate over every selected state (primary + additional), dedupe,
+     and emit a section for any state that has an encoded OT rule. This
+     replaces the prior single-analysisState behavior so a CA + WA
+     employee gets BOTH CA daily-OT rules and WA's salary-threshold
+     note, not just one. */
+  const allStates = [];
+  if (primary) allStates.push(primary);
+  for (const s of additional) allStates.push(s);
+  if (!primary && analysisState) allStates.push(analysisState);
+  const seen = {};
+  const orderedKeys = [];
+  for (const label of allStates) {
+    if (!label) continue;
+    const key = getStateKey(label);
+    if (key === "federal" || seen[key]) continue;
+    seen[key] = true;
+    orderedKeys.push({ key, label });
+  }
+  for (const { key, label } of orderedKeys) {
+    if (_STATE_OT_RULES[key]) {
+      const stateLabel = (THRESHOLDS[key] && THRESHOLDS[key].label) || label;
+      sections.push({ label: stateLabel, text: _STATE_OT_RULES[key] });
+    }
+  }
+
+  /* Multi-state allocation reminder — fires when more than one state
+     has rules in scope, since a single workweek's hours may need to be
+     allocated across jurisdictions for OT calculation purposes. */
+  if (additional.length > 0) {
+    const inScope = [primary].concat(additional).filter(Boolean).join(", ");
     sections.push({
-      label: "California",
-      text: "Overtime required for more than 8 hours in a day AND more than 40 hours in a week. Double time required for more than 12 hours in a day and more than 8 hours on the 7th consecutive day in a workweek."
+      label: "Multi-State Allocation",
+      text: `This employee works in multiple states (${inScope}). Each state's OT rule generally applies to hours worked physically in that state. For mixed weeks, allocate hours per state and apply the local rule (e.g., a CA day + a remote-WA day in the same workweek triggers CA daily OT for the CA day plus the federal/state weekly OT calculation across the full workweek). Coordinate with payroll on multi-state OT calculation methodology.`
     });
   }
-  if (stateKey === "colorado") {
-    sections.push({
-      label: "Colorado",
-      text: "Overtime required for more than 12 hours in a day OR more than 40 hours in a week (note: different from California's 8-hour daily trigger)."
-    });
-  }
+
   sections.push({
     label: "Regular Rate Reminder",
     text: "When calculating overtime, the \"regular rate\" must include all non-discretionary compensation (bonuses, commissions, shift differentials). Only truly discretionary bonuses may be excluded."

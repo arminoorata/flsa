@@ -103,14 +103,37 @@ function buildQuestions(empData, answers) {
   const hourlyRate = empData.hourlyRate;
   const payBasis = empData.payBasis || "";
 
+  /* Computer-exemption routing is per-exemption: pick the state whose
+     computer threshold is most protective for the user's pay basis. The
+     general analysisState may resolve to WA (highest EAP) while the
+     binding constraint for a salary-paid computer role is California's
+     $122,573 — Q6's text and auto-answer must use the same state the
+     evaluator will use, otherwise a $100K CA+WA salary auto-answers
+     "yes" against WA's $80K and the evaluator (correctly using CA)
+     can't tell the answer was computed against the wrong state. */
+  const computerState = (function () {
+    const primary = (empData && empData.primaryWorkState) || (empData && empData.workState) || "";
+    const additional = (empData && empData.additionalStates && Array.isArray(empData.additionalStates))
+      ? empData.additionalStates.filter(s => s && s !== primary)
+      : [];
+    if (additional.length === 0) return analysisState;
+    if (typeof getMostProtectiveStateForComputer === "function") {
+      const all = [primary].concat(additional);
+      return getMostProtectiveStateForComputer(all, payBasis) || analysisState;
+    }
+    return analysisState;
+  })();
+  const computerStateKey = getStateKey(computerState);
+  const computerThreshold = getThreshold(computerState);
+
   const compSalaryText = (() => {
     let parts = ["Federal: salary ≥ $684/week ($35,568/year) OR hourly rate ≥ $27.63/hour."];
-    if (stateKey === "california") {
+    if (computerStateKey === "california") {
       parts.push("California (applies here): salary ≥ $122,573.13/year OR hourly rate ≥ $58.85/hour.");
-    } else if (stateKey === "colorado") {
+    } else if (computerStateKey === "colorado") {
       parts.push("Colorado (applies here): salary ≥ $57,784/year OR hourly rate ≥ $34.85/hour.");
-    } else if (stateKey === "washington") {
-      parts.push("Washington (applies here): hourly rate ≥ $59.96/hour.");
+    } else if (computerStateKey === "washington") {
+      parts.push("Washington (applies here): salary ≥ $80,168/year OR hourly rate ≥ $59.96/hour.");
     }
     let entered = `Entered salary: $${fmtUSD(baseSalary)}/year`;
     if (hourlyRate) entered += `, $${fmtUSD(hourlyRate)}/hour`;
@@ -249,7 +272,7 @@ function buildQuestions(empData, answers) {
       { value: "no", label: "Does not meet the federal threshold" }
     ],
     skipIf: (a) => a.comp_role === "no",
-    autoAnswer: _autoComputerSalary(baseSalary, hourlyRate, threshold, payBasis)
+    autoAnswer: _autoComputerSalary(baseSalary, hourlyRate, computerThreshold, payBasis)
   });
 
   /* Q7: comp_duties */

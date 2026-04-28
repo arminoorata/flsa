@@ -57,7 +57,7 @@ inject("js/ui.js");
 
 /* Expose module globals so this test can probe them. */
 const expose = document.createElement("script");
-expose.textContent = "window.UI = UI; window.Engine = Engine; window.Memo = Memo; window.TOOL_VERSION_DATE = TOOL_VERSION_DATE; window.PAY_BASIS_OPTIONS = PAY_BASIS_OPTIONS;";
+expose.textContent = "window.UI = UI; window.Engine = Engine; window.Memo = Memo; window.TOOL_VERSION_DATE = TOOL_VERSION_DATE; window.PAY_BASIS_OPTIONS = PAY_BASIS_OPTIONS; window.generateOvertimeRules = generateOvertimeRules;";
 document.body.appendChild(expose);
 
 if (!window.UI) {
@@ -520,6 +520,95 @@ const reclassEmp = window.Engine.getEmpData();
 const reclassMemoHtml = window.Memo.renderHTML(reclassEmp, reclassRes.results, reclassRes.overall, reclassRes.riskFlags, { confidence: reclassRes.confidence, memoId: reclassRes.memoId, answers: window.Engine.getAllAnswers() });
 assert(reclassMemoHtml.indexOf("RECLASSIFICATION CONSIDERATIONS") !== -1, "memo should include reclass helper section");
 assert(reclassMemoHtml.indexOf("back-pay") !== -1, "reclass helper should mention back-pay analysis");
+
+/* Regression for codex post-r7 Critical: multi-state CA + WA salary
+   computer at $100K. The UI must auto-answer comp_salary against the
+   per-exemption Computer-routed state (CA — stricter $122,573), NOT
+   the general analysisState (WA $80,168). And even if the user manually
+   overrides to "yes", the evaluator must revalidate $100K base against
+   CA's $122,573 and downgrade to "warn". */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Software Engineer", workState: "California", additionalStates: ["Washington"], baseSalary: 100000, totalComp: 100000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+const compAuto = window.Engine.getAllAnswers();
+assert(compAuto.comp_salary === "federal_only", `multi-state CA+WA salary $100K must auto-pre-select comp_salary=federal_only (meets fed but not CA $122,573); got ${compAuto.comp_salary}`);
+
+/* Now simulate the user manually saying "yes" anyway — evaluator
+   must downgrade to "warn" via salary-basis revalidation. */
+window.Engine.selectOption("hce_start", "no");
+window.Engine.selectOption("comp_role", "yes");
+window.Engine.selectOption("comp_salary", "yes");
+window.Engine.selectOption("comp_duties", "design_dev");
+window.Engine.selectOption("comp_independent", "yes");
+window.Engine.selectOption("admin_salary", "no");
+window.Engine.selectOption("exec_salary", "no");
+window.Engine.selectOption("prof_salary", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const compRevalidate = window.Engine.getResults();
+assert(compRevalidate.results.computer.status === "warn", `evaluator must revalidate salary against routed state — $100K < CA $122,573 → warn; got ${compRevalidate.results.computer.status}`);
+assert(compRevalidate.overall.outcome === "review", `multi-state CA+WA $100K computer with manual yes must end at review, got ${compRevalidate.overall.outcome}`);
+
+/* Regression for codex post-r7 Medium: reclass directional flag must
+   NOT fire when classifyOverall blocks the exempt outcome via critical
+   flag. Currently non-exempt + day-rate + would-otherwise-pass =
+   blocked to review, so directional "Non-Exempt → Exempt" must not
+   appear. The "uncertain" reclass flag fires instead. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "reclass", currentClass: "non_exempt", jobTitle: "Lead Tech", workState: "Texas", baseSalary: 250000, totalComp: 250000, hourlyRate: null, payBasis: "day_rate" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "yes");
+window.Engine.selectOption("hce_office", "yes");
+window.Engine.selectOption("hce_one_duty", "manages");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "yes");
+window.Engine.selectOption("admin_biz_ops", "yes");
+window.Engine.selectOption("admin_discretion", "yes");
+window.Engine.selectOption("exec_salary", "yes");
+window.Engine.selectOption("exec_manage", "yes");
+window.Engine.selectOption("exec_reports", "yes");
+window.Engine.selectOption("exec_hire_fire", "yes");
+window.Engine.selectOption("prof_salary", "yes");
+window.Engine.selectOption("prof_advanced", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const reclassBlocked = window.Engine.getResults();
+assert(reclassBlocked.overall.outcome === "review", `reclass non-exempt + day-rate critical must end at review, got ${reclassBlocked.overall.outcome}`);
+const directionalFlag = reclassBlocked.riskFlags.find(f => f.title.indexOf("Non-Exempt → Exempt") !== -1);
+assert(!directionalFlag, `reclass directional 'Non-Exempt → Exempt' MUST NOT fire when critical blocks the recommendation — got ${directionalFlag && directionalFlag.title}`);
+const uncertainFlag = reclassBlocked.riskFlags.find(f => f.title.indexOf("uncertain") !== -1);
+assert(uncertainFlag, `reclass-uncertain flag should fire instead of directional when critical blocks; got flags: ${reclassBlocked.riskFlags.map(f=>f.title).join("; ")}`);
+
+/* Regression for codex post-r7 Medium: per-state OT rules for multi-
+   state employees. CA + CO non-exempt employee should see BOTH CA
+   daily-OT rule and CO 12-hour rule, not just one. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Field Coord", workState: "California", additionalStates: ["Colorado"], baseSalary: 60000, totalComp: 60000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "no");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "no");
+window.Engine.selectOption("exec_salary", "no");
+window.Engine.selectOption("prof_salary", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const otRes = window.Engine.getResults();
+const otEmp = window.Engine.getEmpData();
+const otSections = window.generateOvertimeRules(otEmp);
+const otLabels = otSections.map(s => s.label);
+assert(otLabels.indexOf("California") !== -1, `multi-state CA+CO must include California OT section, got [${otLabels.join(", ")}]`);
+assert(otLabels.indexOf("Colorado") !== -1, `multi-state CA+CO must include Colorado OT section, got [${otLabels.join(", ")}]`);
+assert(otLabels.indexOf("Multi-State Allocation") !== -1, `multi-state must include allocation reminder, got [${otLabels.join(", ")}]`);
+
+/* Regression: single-state employee should NOT see the multi-state
+   allocation reminder. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Coord", workState: "California", baseSalary: 60000, totalComp: 60000, hourlyRate: null, payBasis: "salary" });
+const singleEmp = window.Engine.getEmpData();
+const singleOt = window.generateOvertimeRules(singleEmp);
+const singleLabels = singleOt.map(s => s.label);
+assert(singleLabels.indexOf("Multi-State Allocation") === -1, `single-state CA must NOT include multi-state allocation, got [${singleLabels.join(", ")}]`);
+assert(singleLabels.indexOf("California") !== -1, `single-state CA must include California OT, got [${singleLabels.join(", ")}]`);
 
 if (errors.length > 0) {
   console.error("Runtime errors captured:");

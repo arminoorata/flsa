@@ -968,6 +968,100 @@ const SCENARIOS = [
     }
   },
 
+  /* Scenario 26: Multi-state CA + WA salary computer @ $100K with the
+     user manually answering comp_salary="yes" (e.g., they overrode the
+     federal_only auto-answer, or entered the form before the auto-
+     answer logic was wired). The evaluator MUST revalidate $100K base
+     against CA's $122,573.13 computer-salary threshold (CA wins per-
+     exemption Computer routing) and downgrade to "warn" instead of
+     blindly returning "pass". Regression for codex post-r7 Critical:
+     "evaluator does not revalidate salary against CA threshold". */
+  {
+    id: 26,
+    name: "Multi-state CA+WA Salary Computer @ $100K with manual yes (evaluator revalidates)",
+    source: "proposed (codex post-r7 Critical: evaluator must revalidate salary)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Software Engineer",
+      workState: "California",
+      additionalStates: ["Washington"],
+      analysisState: "Washington",
+      primaryWorkState: "California",
+      baseSalary: 100000,
+      totalComp: 100000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "yes",
+      comp_salary: "yes",         /* user manually answered yes */
+      comp_duties: "design_dev",
+      comp_independent: "yes",
+      admin_salary: "no",
+      exec_salary: "no",
+      prof_salary: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "skip",   /* CA/WA both reject HCE shortcut */
+      computer: "warn",   /* evaluator downgrades — $100K < CA $122,573 */
+      admin: "fail",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "review"
+    }
+  },
+
+  /* Scenario 27: Reclass currently-non-exempt with passing exemption
+     BUT critical pay-basis flag (day-rate). classifyOverall blocks
+     exempt → review (blockedByCritical=true), so the directional
+     "Non-Exempt → Exempt" flag MUST NOT fire — the recommendation is
+     ambiguous and the dedicated reclass-uncertain flag is correct.
+     Regression for codex post-r7 Medium. */
+  {
+    id: 27,
+    name: "Reclass Non-Exempt currently + day-rate critical (no directional flag)",
+    source: "proposed (codex post-r7 Medium: reclass directional respects critical-block)",
+    empData: {
+      classType: "reclass",
+      currentClass: "non_exempt",
+      jobTitle: "Lead Technician",
+      workState: "Texas",
+      baseSalary: 250000,
+      totalComp: 250000,
+      hourlyRate: null,
+      payBasis: "day_rate"
+    },
+    answers: {
+      hce_start: "yes",
+      hce_office: "yes",
+      hce_one_duty: "manages",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "yes",
+      admin_discretion: "yes",
+      exec_salary: "yes",
+      exec_manage: "yes",
+      exec_reports: "yes",
+      exec_hire_fire: "yes",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "pass",
+      computer: "skip",
+      admin: "pass",
+      executive: "pass",
+      professional: "fail",
+      sales: "skip",
+      outcome: "review",   /* blocked by Helix day-rate critical */
+      flags_contain: ["Day-rate pay"]
+    }
+  },
+
   /* Scenario 13: Reclass exempt → non-exempt with currentClass=exempt.
      Should produce the dedicated CRITICAL reclass flag for the
      direction of change. */
