@@ -387,6 +387,370 @@ const SCENARIOS = [
       outcome: "non-exempt",
       flags_contain: ["reclassification review"]
     }
+  },
+
+  /* Scenario 11: Helix Energy v. Hewitt — high-paid day-rate worker
+     with otherwise-passing exemption answers. The salary-basis test fails
+     and the tool must produce a CRITICAL flag warning the user. */
+  {
+    id: 11,
+    name: "High-Paid Day-Rate Worker (Helix Energy v. Hewitt)",
+    source: "proposed (salary-basis test, day_rate path)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Field Director",
+      workState: "Texas",
+      baseSalary: 250000,
+      totalComp: 260000,
+      hourlyRate: null,
+      payBasis: "day_rate"
+    },
+    answers: {
+      hce_start: "yes",
+      hce_office: "yes",
+      hce_one_duty: "manages",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "yes",
+      admin_discretion: "yes",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "pass",
+      computer: "skip",
+      admin: "pass",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "exempt",
+      flags_contain: ["Helix Energy v. Hewitt"]
+    }
+  },
+
+  /* Scenario 12: Non-overlay state (Florida) — federal-only analysis
+     should still produce the "no state-specific overlay encoded" flag
+     so users remember to check city/county wage laws locally. */
+  {
+    id: 12,
+    name: "Florida Compliance Officer (non-overlay state flag)",
+    source: "proposed (non-overlay state flag path)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Compliance Officer",
+      workState: "Florida",
+      baseSalary: 95000,
+      totalComp: 100000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "yes",
+      admin_discretion: "yes",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "skip",
+      admin: "pass",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "exempt",
+      flags_contain: ["no state-specific overlay encoded"]
+    }
+  },
+
+  /* Scenario 15: Day-rate Computer engineer — duties/skill tests pass
+     but the salary-basis test is not satisfied by day-rate alone. The
+     evaluator MUST downgrade Computer to "warn" so the overall outcome
+     is "review" (not a confidently wrong "exempt"). The CRITICAL Helix
+     flag must also fire and reference 541.604(b). Regression for codex
+     review #2 BLOCKER. */
+  {
+    id: 15,
+    name: "Day-Rate Software Engineer (Computer must downgrade + Helix flag)",
+    source: "proposed (codex r2 BLOCKER: day-rate must downgrade Computer to warn)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Software Engineer",
+      workState: "Texas",
+      baseSalary: 150000,
+      totalComp: 150000,
+      hourlyRate: null,
+      payBasis: "day_rate"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "yes",
+      comp_salary: "yes",
+      comp_duties: "design_dev",
+      comp_independent: "yes",
+      admin_salary: "no",
+      exec_salary: "no",
+      prof_salary: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "warn",
+      admin: "fail",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "review",
+      flags_contain: ["Day-rate pay — salary basis test likely fails", "541.604(b)"]
+    }
+  },
+
+  /* Scenario 19: Hourly programmer above federal $27.63/hr but below
+     California $58.85/hr state hourly minimum. The evaluator must
+     downgrade Computer to "warn" so the more-protective state standard
+     wins. Regression for codex review #3 finding. */
+  {
+    id: 19,
+    name: "California Hourly Programmer (above federal, below CA state)",
+    source: "proposed (codex r3 finding: hourly state-threshold gap)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Programmer",
+      workState: "California",
+      baseSalary: 90000,
+      totalComp: 90000,
+      hourlyRate: 40.00,
+      payBasis: "hourly"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "yes",
+      comp_salary: "yes",  /* user manually said yes */
+      comp_duties: "design_dev",
+      comp_independent: "yes",
+      admin_salary: "no",
+      exec_salary: "no",
+      prof_salary: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "warn",
+      admin: "fail",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "review"
+    }
+  },
+
+  /* Scenario 18: Hourly programmer below the $27.63/hr federal minimum
+     with a nominal annual base. The auto-pre-select must NOT fire
+     "yes" from baseSalary alone; the evaluator must FAIL Computer.
+     Regression for codex review #2 BLOCKER. */
+  {
+    id: 18,
+    name: "Hourly Programmer Below $27.63/hr (must FAIL Computer)",
+    source: "proposed (codex r2 BLOCKER: hourly Computer must check actual hourly rate)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Junior Developer",
+      workState: "Texas",
+      baseSalary: 50000,
+      totalComp: 50000,
+      hourlyRate: 20.00,
+      payBasis: "hourly"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "yes",
+      comp_salary: "no",         /* below $27.63/hr federal */
+      admin_salary: "no",
+      exec_salary: "no",
+      prof_salary: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "fail",
+      admin: "fail",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "non-exempt"
+    }
+  },
+
+  /* Scenario 16: Fee-basis HCE — the fee-basis flag MUST say HCE is
+     supported via 541.605/541.601(b)(1) per-job equivalence test, NOT
+     that it disqualifies HCE. Regression for codex finding: previously
+     the flag said fee basis "does NOT satisfy Executive or HCE" — wrong
+     about HCE. */
+  {
+    id: 16,
+    name: "Fee-Basis HCE (must say fee basis can support HCE per 541.605)",
+    source: "proposed (codex BLOCKER fix: fee basis CAN satisfy HCE)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Independent Consultant",
+      workState: "Texas",
+      baseSalary: 150000,
+      totalComp: 150000,
+      hourlyRate: null,
+      payBasis: "fee_basis"
+    },
+    answers: {
+      hce_start: "yes",
+      hce_office: "yes",
+      hce_one_duty: "admin_discretion",
+      comp_role: "no",
+      admin_salary: "no",
+      exec_salary: "no",
+      prof_salary: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "pass",
+      computer: "skip",
+      admin: "fail",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "exempt",
+      flags_contain: ["confirm 29 CFR 541.605 per-job equivalence", "Highly Compensated Employee (HCE)"]
+    }
+  },
+
+  /* Scenario 17: Fee-basis Executive — fee basis MUST trigger the
+     dedicated CRITICAL flag because Executive (29 CFR 541.100(a)(1))
+     allows salary basis only, not fee. */
+  {
+    id: 17,
+    name: "Fee-Basis Executive (must trigger CRITICAL exec-only flag)",
+    source: "proposed (Executive only allows salary basis, not fee)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Department Head",
+      workState: "Texas",
+      baseSalary: 200000,
+      totalComp: 200000,
+      hourlyRate: null,
+      payBasis: "fee_basis"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "no",
+      admin_salary: "no",
+      exec_salary: "yes",
+      exec_manage: "yes",
+      exec_reports: "yes",
+      exec_hire_fire: "yes",
+      prof_salary: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "skip",
+      admin: "fail",
+      executive: "pass",
+      professional: "fail",
+      sales: "skip",
+      outcome: "exempt",
+      flags_contain: ["Fee-basis pay incompatible with Executive exemption"]
+    }
+  },
+
+  /* Scenario 14: Reclass currently-exempt with REVIEW outcome (a
+     borderline working manager). The directional flag must NOT say
+     "Exempt → Non-Exempt" because the recommendation is "needs legal
+     review", not non-exempt. The "uncertain" flag should fire instead. */
+  {
+    id: 14,
+    name: "Reclass Currently-Exempt with REVIEW outcome (uncertain flag)",
+    source: "proposed (reclass + review outcome must NOT trigger directional)",
+    empData: {
+      classType: "reclass",
+      currentClass: "exempt",
+      jobTitle: "Tech Lead",
+      workState: "Texas",
+      baseSalary: 150000,
+      totalComp: 180000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "yes",
+      hce_office: "yes",
+      hce_one_duty: "none",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "production",
+      exec_salary: "yes",
+      exec_manage: "partial",
+      exec_reports: "yes",
+      exec_hire_fire: "yes",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "skip",
+      admin: "fail",
+      executive: "warn",
+      professional: "fail",
+      sales: "skip",
+      outcome: "review",
+      flags_contain: ["Reclassification status uncertain"]
+    }
+  },
+
+  /* Scenario 13: Reclass exempt → non-exempt with currentClass=exempt.
+     Should produce the dedicated CRITICAL reclass flag for the
+     direction of change. */
+  {
+    id: 13,
+    name: "Reclass Exempt → Non-Exempt (back-pay flag)",
+    source: "proposed (reclass current→recommended differential)",
+    empData: {
+      classType: "reclass",
+      currentClass: "exempt",
+      jobTitle: "Junior Coordinator",
+      workState: "Texas",
+      baseSalary: 50000,
+      totalComp: 50000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "production",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "skip",
+      admin: "fail",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "non-exempt",
+      flags_contain: ["Exempt → Non-Exempt"]
+    }
   }
 ];
 
@@ -414,7 +778,8 @@ function runScenario(s) {
   }
   if (s.expect.flags_contain) {
     for (const substr of s.expect.flags_contain) {
-      if (!flags.some(f => f.indexOf(substr) !== -1)) {
+      const haystack = (f) => typeof f === "string" ? f : `${f.title} ${f.body}`;
+      if (!flags.some(f => haystack(f).indexOf(substr) !== -1)) {
         failures.push(`flags should contain "${substr}" but got ${JSON.stringify(flags)}`);
       }
     }

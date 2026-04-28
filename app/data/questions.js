@@ -14,15 +14,85 @@ function fmtUSD(n) {
   });
 }
 
+/* Auto-answer helpers for the EAP salary tests. The user can always
+   override; the auto-applied flag in the engine ensures we only
+   propagate intake-derived answers, never user picks. */
+function _autoAdminProfExecSalary(baseSalary, threshold, payBasis) {
+  if (!baseSalary || baseSalary <= 0) return undefined;
+  const fedThresh = FEDERAL_EAP_ANNUAL;
+  const stateThresh = threshold.eapAnnual || fedThresh;
+  const higher = Math.max(stateThresh, fedThresh);
+  const meetsLevel = baseSalary >= higher;
+  /* Salary-basis precondition: only auto-pre-select "yes" when we are
+     reasonably confident the salary basis test passes. Hourly/day-rate/
+     fee-basis pay schemes need user confirmation. Admin/Prof can use
+     fee basis under federal regs but we leave that to user judgment. */
+  const validBasis = (payBasis === "salary" || payBasis === "" || payBasis === undefined);
+  if (meetsLevel && validBasis) return "yes";
+  return undefined;
+}
+
+function _autoComputerSalary(baseSalary, hourlyRate, threshold, payBasis) {
+  if (!baseSalary && !hourlyRate) return undefined;
+  const fedAnnual = FEDERAL_EAP_ANNUAL;
+  const fedHourly = FEDERAL_COMPUTER_HOURLY;
+  const stateAnnual = threshold.computerSalaryAnnual;
+  const stateHourly = threshold.computerHourly;
+  const baseSal = baseSalary || 0;
+  const hr = hourlyRate || 0;
+  const hasState = (stateAnnual !== null && stateAnnual !== undefined) ||
+                   (stateHourly !== null && stateHourly !== undefined);
+
+  /* Branch by pay basis so we never claim the salary path is met when
+     the employee is paid hourly (or vice versa). 29 CFR 541.400(b)(2)
+     allows EITHER salary basis ≥ $684/wk OR hourly ≥ $27.63/hr — not
+     both interchangeably. Day-rate / fee-basis / other never auto-pass:
+     they require explicit user judgment about 541.604(b) or 541.605. */
+
+  if (payBasis === "salary" || payBasis === "" || payBasis === undefined) {
+    const meetsFed = baseSal >= fedAnnual;
+    let meetsState = true;
+    if (hasState) {
+      const stateSalaryOk = (stateAnnual === null || stateAnnual === undefined) ? false : baseSal >= stateAnnual;
+      meetsState = stateSalaryOk;
+    }
+    if (meetsFed && meetsState) return "yes";
+    if (meetsFed && !meetsState) return "federal_only";
+    return undefined;
+  }
+
+  if (payBasis === "hourly") {
+    /* Hourly-pay employees must qualify via the hourly alternative.
+       Falling back to baseSalary would let a $20/hr role with a
+       nominal $50k annual base auto-pass, which is wrong. */
+    if (!hr) return undefined;  /* User must enter hourly rate. */
+    const meetsFed = hr >= fedHourly;
+    let meetsState = true;
+    if (hasState) {
+      const stateHourlyOk = (stateHourly === null || stateHourly === undefined) ? false : hr >= stateHourly;
+      meetsState = stateHourlyOk;
+    }
+    if (meetsFed && meetsState) return "yes";
+    if (meetsFed && !meetsState) return "federal_only";
+    return undefined;
+  }
+
+  /* day_rate / fee_basis / other: never auto-pre-select. The salary-
+     basis flag explains why these need explicit human judgment about
+     541.604(b) (day/shift) or 541.605 (fee). */
+  return undefined;
+}
+
 function buildQuestions(empData, answers) {
   const stateKey = getStateKey(empData.workState);
   const threshold = getThreshold(empData.workState);
-  const fedThresh = 35568;
+  const fedThresh = FEDERAL_EAP_ANNUAL;
   const stateThresh = threshold.eapAnnual;
   const higher = Math.max(stateThresh, fedThresh);
   const totalComp = empData.totalComp || empData.baseSalary || 0;
   const baseSalary = empData.baseSalary || 0;
   const hourlyRate = empData.hourlyRate;
+  const payBasis = empData.payBasis || "";
 
   const compSalaryText = (() => {
     let parts = ["Federal: salary ≥ $684/week ($35,568/year) OR hourly rate ≥ $27.63/hour."];
@@ -149,7 +219,8 @@ function buildQuestions(empData, answers) {
       { value: "federal_only", label: "Meets federal threshold but NOT state threshold" },
       { value: "no", label: "Does not meet the federal threshold" }
     ],
-    skipIf: (a) => a.comp_role === "no"
+    skipIf: (a) => a.comp_role === "no",
+    autoAnswer: _autoComputerSalary(baseSalary, hourlyRate, threshold, payBasis)
   });
 
   /* Q7: comp_duties */
@@ -199,7 +270,8 @@ function buildQuestions(empData, answers) {
     options: [
       { value: "yes", label: "Yes, meets the applicable salary threshold" },
       { value: "no", label: "No, does not meet the threshold" }
-    ]
+    ],
+    autoAnswer: _autoAdminProfExecSalary(baseSalary, threshold, payBasis)
   });
 
   /* Q10: admin_biz_ops */
@@ -263,7 +335,8 @@ function buildQuestions(empData, answers) {
     options: [
       { value: "yes", label: "Yes" },
       { value: "no", label: "No" }
-    ]
+    ],
+    autoAnswer: _autoAdminProfExecSalary(baseSalary, threshold, payBasis)
   });
 
   /* Q14: exec_manage */
@@ -325,7 +398,8 @@ function buildQuestions(empData, answers) {
     options: [
       { value: "yes", label: "Yes" },
       { value: "no", label: "No" }
-    ]
+    ],
+    autoAnswer: _autoAdminProfExecSalary(baseSalary, threshold, payBasis)
   });
 
   /* Q18: prof_advanced */

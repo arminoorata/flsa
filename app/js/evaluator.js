@@ -77,6 +77,8 @@ function evaluateHCE(answers, empData, stateKey) {
 function evaluateComputer(answers, empData, threshold) {
   const title = "Computer Employee";
   const stateLabel = threshold.label;
+  const payBasis = (empData && empData.payBasis) || "";
+  const hourlyRate = (empData && empData.hourlyRate) || 0;
 
   if (answers.comp_role === "no") {
     return {
@@ -150,6 +152,59 @@ function evaluateComputer(answers, empData, threshold) {
     answers.comp_duties && answers.comp_duties !== "none" &&
     answers.comp_independent === "yes"
   ) {
+    /* Compensation-mechanism gate: 29 CFR 541.400(b)(2) requires either
+       salary basis ≥ $684/wk OR hourly ≥ $27.63/hr. The user already
+       answered comp_salary="yes" but we re-validate against the actual
+       pay-basis mechanics so the recommendation can never contradict
+       the inputs. Day/fee/other can only pass via 541.604(b) (guaranteed
+       weekly minimum) or 541.605 (per-job equivalence) — neither is
+       modeled, so we downgrade to "warn".
+
+       Hourly pay must clear the FEDERAL hourly minimum AND any state
+       hourly minimum. State-only fail downgrades to "warn" (federal_only
+       semantics) so the more-protective standard wins. */
+    if (payBasis === "hourly") {
+      if (hourlyRate < FEDERAL_COMPUTER_HOURLY) {
+        return {
+          status: "fail",
+          title,
+          summary: `Hourly rate ($${_fmt(hourlyRate)}/hr) is below the federal computer-employee minimum of $${_fmt(FEDERAL_COMPUTER_HOURLY)}/hr. Salary basis is not available because pay is hourly.`,
+          details: [
+            "Role type: Computer-related",
+            "Compensation test: FAIL (hourly below federal threshold)",
+            "Duties test: PASS",
+            "Independence/skill test: PASS"
+          ]
+        };
+      }
+      if (threshold.computerHourly && hourlyRate < threshold.computerHourly) {
+        return {
+          status: "warn",
+          title,
+          summary: `Hourly rate ($${_fmt(hourlyRate)}/hr) meets the federal $${_fmt(FEDERAL_COMPUTER_HOURLY)}/hr minimum but NOT the ${stateLabel} state minimum of $${_fmt(threshold.computerHourly)}/hr. Apply the more protective standard: classify as NON-EXEMPT for overtime purposes.`,
+          details: [
+            "Role type: Computer-related",
+            "Federal hourly: PASS",
+            `${stateLabel} hourly: FAIL`,
+            "Duties test: PASS",
+            "Independence/skill test: PASS"
+          ]
+        };
+      }
+    }
+    if (payBasis === "day_rate" || payBasis === "fee_basis" || payBasis === "other") {
+      return {
+        status: "warn",
+        title,
+        summary: `Duties and skill tests pass, but pay basis is "${payBasis.replace("_", " ")}". The salary-basis test is not satisfied by this arrangement on its own. The exemption can still apply if (a) the employee actually receives ≥ $27.63/hour federal (and any applicable state) hourly equivalent, OR (b) a 29 CFR 541.604(b) guaranteed weekly minimum + reasonable-relationship arrangement is documented (for day/shift), OR (c) a 29 CFR 541.605 per-job equivalence is documented (for fee basis). Confirm with employment counsel before classifying as exempt.`,
+        details: [
+          "Role type: Computer-related",
+          `Pay basis: ${payBasis} (does not satisfy salary basis on its own)`,
+          "Duties test: PASS",
+          "Independence/skill test: PASS"
+        ]
+      };
+    }
     return {
       status: "pass",
       title,
@@ -443,47 +498,308 @@ function classifyOverall(results, empData) {
   return { outcome: "non-exempt", text: rec, passing, borderline };
 }
 
+/* ── Risk flag generation ────────────────────────────────────────────
+   Each flag is { severity, title, body } where severity is one of
+   "critical" | "high" | "medium" | "low". Critical flags should block
+   acting on the recommendation without legal review. */
+
+function _flag(severity, title, body) {
+  return { severity, title, body };
+}
+
 function generateRiskFlags(answers, empData, results) {
   const flags = [];
   const stateKey = getStateKey(empData.workState);
   const threshold = getThreshold(empData.workState);
   const stateLabel = threshold.label;
+  const payBasis = empData.payBasis || "";
+  const totalComp = empData.totalComp || empData.baseSalary || 0;
 
-  /* Flag 1: Borderline Exemptions */
+  /* Pay-basis interactions with each exemption (29 CFR 541.600 et seq.):
+       - Salary basis (541.602): satisfies all EAP + HCE.
+       - Fee basis (541.605): satisfies Admin, Prof, Computer, HCE if the
+         fee divided by the hours actually required to complete it equals
+         ≥ $684/wk. Does NOT satisfy Executive (541.100(a)(1) requires
+         salary basis only).
+       - Hourly: satisfies only Computer (541.400(b)(2), $27.63/hr min).
+         All other EAP + HCE require salary or fee basis.
+       - Day/shift/hourly with guaranteed weekly minimum + reasonable
+         relationship between guaranteed amount and amount actually
+         earned (541.604(b)) — the Helix Energy v. Hewitt (2023) escape
+         hatch — can also satisfy salary basis for any EAP exemption.
+         The tool does not currently model this case explicitly, so we
+         flag it for the user to verify.
+     Names in the result map: hce, computer, admin, executive, professional. */
+
+  function _statusOf(key) {
+    return (results[key] && results[key].status) || "skip";
+  }
+  function _isClaimed(key) {
+    const s = _statusOf(key);
+    return s === "pass" || s === "warn";
+  }
+
+  if (payBasis === "day_rate") {
+    /* Day-rate identifies any case where the salary-basis test fails
+       UNLESS 541.604(b) is documented. The 541.604(b) path requires a
+       guaranteed weekly minimum equal to the salary level AND a
+       reasonable relationship to the amount actually earned. We
+       recommend the user document that explicitly or convert to true
+       salary. The flag fires for ANY claimed exemption (including
+       Computer — Helix Energy itself involved a high-paid technical
+       role). */
+    const claimed = ["hce", "admin", "executive", "professional", "computer"]
+      .filter(_isClaimed)
+      .map(k => results[k].title);
+    if (claimed.length) {
+      flags.push(_flag(
+        "critical",
+        "Day-rate pay — salary basis test likely fails (Helix Energy v. Hewitt, 2023)",
+        `Employee is paid on a day rate. Under the Supreme Court's 2023 Helix Energy v. Hewitt decision, day-rate workers generally do not satisfy the salary-basis requirement for EAP/HCE exemptions, even at high pay levels (the Helix worker earned $200K+ and was still non-exempt). The narrow exception is 29 CFR 541.604(b): a day/shift/hourly arrangement may satisfy salary basis if the employee receives a GUARANTEED WEEKLY MINIMUM equal to the salary level AND there is a reasonable relationship between the guarantee and actual earnings. Currently passing/borderline: ${claimed.join(", ")}. Either (a) convert to a true weekly salary, (b) document the 541.604(b) guarantee explicitly, or (c) treat as non-exempt. Computer Employee may also be supported by a true hourly rate ≥ $27.63/hour (federal); see 541.400(b)(2).`
+      ));
+    } else {
+      flags.push(_flag(
+        "medium",
+        "Day-rate pay confirmed (no EAP exemption claimed)",
+        "Day rate alone does not satisfy the salary-basis requirement for white-collar exemptions (Helix Energy, 2023). The narrow 29 CFR 541.604(b) guarantee/reasonable-relationship exception exists but is not modeled here. Outcome on this analysis is non-exempt, which is consistent with that rule."
+      ));
+    }
+  } else if (payBasis === "fee_basis") {
+    /* Fee basis is OK for Admin, Prof, Computer, HCE per 29 CFR 541.605
+       (and HCE per 541.601(b)(1) which allows the weekly portion on
+       salary or fee basis). It is NOT OK for Executive — 541.100 requires
+       salary basis only. */
+    const execClaimed = _isClaimed("executive");
+    const otherEligibleClaimed = ["hce", "admin", "professional", "computer"]
+      .filter(_isClaimed)
+      .map(k => results[k].title);
+    if (execClaimed) {
+      flags.push(_flag(
+        "critical",
+        "Fee-basis pay incompatible with Executive exemption",
+        "Employee is paid on a fee basis. The Executive exemption (29 CFR 541.100(a)(1)) requires salary basis only; fee basis does NOT satisfy it. Either convert to salary or rely on a different exemption (Admin/Professional/Computer/HCE all permit fee basis under 541.605, subject to the per-job equivalence test below)."
+      ));
+    }
+    if (otherEligibleClaimed.length) {
+      flags.push(_flag(
+        "high",
+        "Fee-basis pay — confirm 29 CFR 541.605 per-job equivalence",
+        `Fee basis can support the Administrative, Learned Professional, Computer, and HCE exemptions (29 CFR 541.605; 541.601(b)(1)) ONLY if the fee for a single job, divided by the hours required to complete it, yields at least $684/week. Document the per-job calculation explicitly for: ${otherEligibleClaimed.join(", ")}.`
+      ));
+    }
+    if (!execClaimed && !otherEligibleClaimed.length) {
+      flags.push(_flag(
+        "medium",
+        "Fee-basis pay confirmed (no exemption claimed)",
+        "Fee basis can satisfy Admin, Prof, Computer, and HCE under 29 CFR 541.605 with per-job equivalence. It does NOT satisfy Executive. No exemption is currently being claimed, so this is informational."
+      ));
+    }
+  } else if (payBasis === "hourly") {
+    /* Computer-on-hourly is the canonical exception (541.400(b)(2)).
+       Any other claimed EAP under hourly pay needs salary basis or a
+       541.604(b) guarantee. */
+    if (_isClaimed("computer")) {
+      const stateClause = (stateKey !== "federal" && threshold.computerHourly)
+        ? ` (and ${stateLabel} state minimum: $${_fmt(threshold.computerHourly)}/hour)`
+        : "";
+      flags.push(_flag(
+        "low",
+        "Hourly pay — Computer exemption uses hourly alternative",
+        `Hourly rate ≥ $27.63/hour federal${stateClause} satisfies the Computer Employee compensation test (29 CFR 541.400(b)(2)). Other EAP/HCE exemptions require salary basis or a 541.604(b) guaranteed weekly minimum.`
+      ));
+    }
+    const nonComputerClaimed = ["hce", "admin", "executive", "professional"]
+      .filter(_isClaimed)
+      .map(k => results[k].title);
+    if (nonComputerClaimed.length) {
+      flags.push(_flag(
+        "critical",
+        "Hourly pay incompatible with non-Computer EAP exemption",
+        `Administrative, Executive, Professional, and HCE exemptions require salary basis (or, for Admin/Prof/HCE, fee basis under 541.605). Pure hourly pay generally disqualifies these. The narrow exception is 29 CFR 541.604(b): a guaranteed weekly minimum equal to the salary level plus a reasonable relationship to actual earnings can satisfy salary basis. Currently claimed: ${nonComputerClaimed.join(", ")}. Either (a) convert to a true salary basis, (b) document the 541.604(b) guarantee, or (c) treat as non-exempt for overtime.`
+      ));
+    }
+  } else if (payBasis === "other") {
+    const claimed = ["hce", "admin", "executive", "professional", "computer"]
+      .filter(_isClaimed)
+      .map(k => results[k].title);
+    if (claimed.length) {
+      flags.push(_flag(
+        "high",
+        "Non-standard pay arrangement — verify salary basis",
+        `Pay basis is commission, draw, piecework, or other non-standard arrangement. Confirm with employment counsel that the salary-basis test (or, where applicable, fee basis under 541.605, hourly under 541.400(b)(2), or the 541.604(b) guarantee) is met before relying on these exemptions: ${claimed.join(", ")}.`
+      ));
+    }
+  }
+
+  /* Flag: Borderline Exemptions */
   const order = ["hce", "computer", "admin", "executive", "professional", "sales"];
   for (const key of order) {
     const r = results[key];
     if (r && r.status === "warn") {
-      flags.push(`The ${r.title} exemption is borderline. Document the specific duties analysis and consider legal review.`);
+      flags.push(_flag(
+        "high",
+        `Borderline: ${r.title}`,
+        `The ${r.title} exemption is borderline. Document the specific duties analysis and consider legal review.`
+      ));
     }
   }
 
-  /* Flag 2: Federal-Only Computer Threshold */
+  /* Flag: Federal-Only Computer Threshold (paid above federal min, below state) */
   if (answers.comp_salary === "federal_only") {
-    flags.push(`Employee meets federal computer employee threshold but NOT ${stateLabel} state threshold. Apply the more protective state standard.`);
+    flags.push(_flag(
+      "high",
+      "Computer exemption: federal-only threshold met",
+      `Employee meets federal computer employee threshold but NOT ${stateLabel} state threshold. Apply the more protective state standard.`
+    ));
   }
 
-  /* Flag 3: Customer Ops (when not in strict state) */
+  /* Flag: Customer Ops admin (passes federal, fails strict states) */
   if (answers.admin_biz_ops === "customer_ops" && STRICT_ADMIN_STATES.indexOf(stateKey) === -1) {
-    flags.push("Administrative exemption based on customer operations work. This qualifies under federal law but would NOT qualify in states like New York or Oregon. If the employee relocates to those states, reclassification may be needed.");
+    flags.push(_flag(
+      "medium",
+      "Admin exemption based on customer-facing duties",
+      "Administrative exemption based on customer operations work. This qualifies under federal law but would NOT qualify in states like New York or Oregon. If the employee relocates to those states, reclassification may be needed."
+    ));
   }
 
-  /* Flag 4: Working Manager */
+  /* Flag: Working Manager */
   if (answers.exec_manage === "partial") {
-    flags.push("Working manager/player-coach role. If the non-management duties consume more than 50% of time, the \"primary duty\" test could fail under scrutiny.");
+    flags.push(_flag(
+      "high",
+      "Working manager / player-coach role",
+      "Working manager/player-coach role. If the non-management duties consume more than 50% of time, the \"primary duty\" test could fail under scrutiny."
+    ));
   }
 
-  /* Flag 5: Below State EAP Threshold */
+  /* Flag: Below State EAP Threshold */
   if (empData.baseSalary < threshold.eapAnnual && threshold.eapAnnual > 35568) {
-    flags.push(`Employee salary ($${_fmt(empData.baseSalary)}) is below the ${stateLabel} state EAP threshold ($${_fmt(threshold.eapAnnual)}). Even if duties tests pass, the state salary test fails.`);
+    flags.push(_flag(
+      "high",
+      `Salary below ${stateLabel} state EAP threshold`,
+      `Employee salary ($${_fmt(empData.baseSalary)}) is below the ${stateLabel} state EAP threshold ($${_fmt(threshold.eapAnnual)}). Even if duties tests pass, the state salary test fails.`
+    ));
   }
 
-  /* Flag 6: Reclassification Review */
+  /* Flag: Non-overlay state (no encoded state-specific rules) */
+  const isFederalOnly = stateKey === "federal";
+  const stateProvided = empData.workState && empData.workState.length > 0;
+  if (isFederalOnly && stateProvided) {
+    flags.push(_flag(
+      "low",
+      `${empData.workState} has no state-specific overlay encoded`,
+      `This tool does not encode state-specific EAP rules for ${empData.workState} (federal standards apply by default). Verify locally that no state minimum-wage law, paid-leave law, salary-history rule, predictive-scheduling ordinance, or city/county wage law affects this classification before finalizing.`
+    ));
+  }
+
+  /* Flag: Reclassification — see also reclass helper in memo. */
   if (empData.classType === "reclass") {
-    flags.push("This is a reclassification review. If changing from exempt to non-exempt, plan a communication strategy to address employee concerns about the change (timekeeping requirements, perception of status change). Position it as a compliance benefit.");
+    const currentClass = empData.currentClass || "";
+    const overallOutcome = (results._overallOutcome) || null; /* not used; see below */
+    flags.push(_flag(
+      "medium",
+      "This is a reclassification review",
+      "If changing from exempt to non-exempt, plan a communication strategy to address employee concerns (timekeeping, perception of status change). Position it as a compliance benefit. If the recommendation differs from the current classification, see the Reclassification Considerations section below for next steps."
+    ));
+
+    if (currentClass === "exempt" || currentClass === "non_exempt") {
+      /* Determine the recommended outcome from the evaluator results.
+         Mirrors classifyOverall(): exempt = at least one passing exemption,
+         non-exempt = nothing passes AND nothing borderline, review =
+         no pass but at least one borderline. The directional flag must
+         only fire when the recommendation is unambiguous; "review" must
+         NOT be reframed as non-exempt because the suggested action is
+         "wait for legal review", not "convert and pay back wages". */
+      const passing = order.filter(k => results[k] && results[k].status === "pass");
+      const borderline = order.filter(k => results[k] && results[k].status === "warn");
+      const recommendsExempt = passing.length > 0;
+      const recommendsNonExempt = passing.length === 0 && borderline.length === 0;
+      const recommendsReview = passing.length === 0 && borderline.length > 0;
+
+      if (currentClass === "exempt" && recommendsNonExempt) {
+        flags.push(_flag(
+          "critical",
+          "Reclassification: Exempt → Non-Exempt",
+          "Currently classified as exempt; recommended classification is non-exempt. Plan back-pay analysis (overtime owed for the lookback period — typically 2-3 years under FLSA), communication, and timekeeping rollout. Consider running this past employment counsel before action."
+        ));
+      } else if (currentClass === "non_exempt" && recommendsExempt) {
+        flags.push(_flag(
+          "high",
+          "Reclassification: Non-Exempt → Exempt",
+          "Currently classified as non-exempt; recommended classification is exempt. Confirm salary level meets the applicable threshold from the effective date forward, audit recent timekeeping for unpaid overtime liability, and document the duties basis carefully."
+        ));
+      } else if (currentClass === "exempt" && recommendsReview) {
+        flags.push(_flag(
+          "high",
+          "Reclassification status uncertain — legal review needed before any change",
+          "Currently classified as exempt; the tool could not produce a clear recommendation (one or more exemptions are borderline). Do NOT convert to non-exempt or initiate back-pay analysis on the basis of this memo alone. Consult employment counsel to resolve the borderline calls before changing classification."
+        ));
+      } else if (currentClass === "non_exempt" && recommendsReview) {
+        flags.push(_flag(
+          "medium",
+          "Reclassification status uncertain — legal review needed before any change",
+          "Currently classified as non-exempt; the tool could not produce a clear recommendation (one or more exemptions are borderline). Continue treating as non-exempt for now and consult counsel to resolve the borderline calls before reclassifying as exempt."
+        ));
+      }
+    }
   }
 
-  return flags;
+  /* Stable severity-then-original-order sort. */
+  const rank = { critical: 0, high: 1, medium: 2, low: 3 };
+  return flags
+    .map((f, i) => ({ ...f, _i: i }))
+    .sort((a, b) => (rank[a.severity] - rank[b.severity]) || (a._i - b._i))
+    .map(({ _i, ...rest }) => rest);
+}
+
+/* Confidence: a single judgment for the deploying HR generalist about
+   how much weight to put on the recommendation without independent
+   legal review. Returns { level, reasons }.
+   - low:    any borderline result OR critical-severity flag
+   - medium: high-severity flag, or no clear pass + only fails (non-exempt)
+             with non-overlay state (some judgment still required)
+   - high:   clean pass with no warns and no high-severity-or-above flags */
+function computeConfidence(results, overall, riskFlags, empData) {
+  const reasons = [];
+  let level = "high";
+
+  const order = ["hce", "computer", "admin", "executive", "professional", "sales"];
+  const hasWarn = order.some(k => results[k] && results[k].status === "warn");
+  const passing = order.filter(k => results[k] && results[k].status === "pass");
+
+  const sevs = riskFlags.map(f => f.severity);
+  const hasCritical = sevs.indexOf("critical") !== -1;
+  const hasHigh = sevs.indexOf("high") !== -1;
+  const hasMedium = sevs.indexOf("medium") !== -1;
+
+  if (hasCritical) {
+    level = "low";
+    reasons.push("One or more CRITICAL risk flags require resolution before relying on this recommendation.");
+  }
+  if (hasWarn) {
+    if (level === "high") level = "low";
+    reasons.push("At least one exemption is borderline (judgment call required).");
+  }
+  if (overall.outcome === "review") {
+    if (level === "high") level = "low";
+    reasons.push("No exemption clearly passed; legal review is recommended.");
+  }
+  if (hasHigh && level === "high") {
+    level = "medium";
+    reasons.push("One or more HIGH-severity risk flags warrant attention.");
+  }
+  if (hasMedium && level === "high") {
+    level = "medium";
+    reasons.push("One or more MEDIUM-severity risk flags should be reviewed.");
+  }
+  if (overall.outcome === "exempt" && passing.length === 1 && level === "high") {
+    /* Single passing exemption is fine; no downgrade.
+       But if the only passing exemption has any borderline detail, we already
+       caught it above. */
+  }
+  if (level === "high") {
+    reasons.push("Outcome is unambiguous: salary, duties, and any state-overlay tests align.");
+  }
+  return { level, reasons };
 }
 
 function generateOvertimeRules(empData) {

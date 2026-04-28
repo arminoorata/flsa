@@ -58,8 +58,20 @@ const UI = (function () {
   function renderIntake() {
     const emp = Engine.getEmpData();
     const stateOptions = STATES.map(s => `<option value="${escapeHtml(s)}"${s === emp.workState ? " selected" : ""}>${escapeHtml(s)}</option>`).join("");
+    const payBasisOptions = PAY_BASIS_OPTIONS.map(o =>
+      `<option value="${escapeHtml(o.value)}"${o.value === emp.payBasis ? " selected" : ""}>${escapeHtml(o.label)}</option>`
+    ).join("");
+    const isReclass = emp.classType === "reclass";
+
     const content = document.getElementById("content");
     content.innerHTML = `
+      <div class="card privacy-banner no-print" role="note" aria-label="Privacy notice">
+        <span class="privacy-icon" aria-hidden="true">🔒</span>
+        <div class="privacy-text">
+          <strong>Your data stays in your browser.</strong> Nothing you enter — names, salaries, answers — is transmitted, stored remotely, or logged. Closing the tab clears the session. Save or print the memo locally if you need a record. (The page does load Google Fonts from <code>fonts.googleapis.com</code>, so Google can see when the page was opened, but no employee information is ever sent.)
+        </div>
+      </div>
+
       <div class="card">
         <p class="intake-intro">Answer the intake questions below, then walk through six exemption categories. The tool will generate a <strong>classification recommendation memo</strong> you can print or save.</p>
 
@@ -71,24 +83,33 @@ const UI = (function () {
               <option value="reclass"${emp.classType === "reclass" ? " selected" : ""}>Reclassification Review</option>
             </select>
           </div>
-          <div class="field">
-            <label for="empName">Employee Name or Role Title</label>
-            <input type="text" id="empName" value="${escapeHtml(emp.empName || "")}" placeholder="Optional" />
+          <div class="field" id="currentClass-field"${isReclass ? "" : " style=\"display:none\""}>
+            <label for="currentClass">Current Classification${isReclass ? "<span class=\"req\">*</span>" : ""}</label>
+            <select id="currentClass">
+              <option value=""${!emp.currentClass ? " selected" : ""}>— Select —</option>
+              <option value="exempt"${emp.currentClass === "exempt" ? " selected" : ""}>Exempt</option>
+              <option value="non_exempt"${emp.currentClass === "non_exempt" ? " selected" : ""}>Non-exempt</option>
+            </select>
+            <div class="hint">Used to flag whether the recommendation differs from the existing classification.</div>
           </div>
         </div>
 
         <div class="field-row">
           <div class="field">
+            <label for="empName">Employee Name or Role Title</label>
+            <input type="text" id="empName" value="${escapeHtml(emp.empName || "")}" placeholder="Optional" />
+          </div>
+          <div class="field">
             <label for="jobTitle">Job Title<span class="req">*</span></label>
             <input type="text" id="jobTitle" value="${escapeHtml(emp.jobTitle || "")}" placeholder="e.g., Senior Software Engineer" />
           </div>
+        </div>
+
+        <div class="field-row">
           <div class="field">
             <label for="department">Department</label>
             <input type="text" id="department" value="${escapeHtml(emp.department || "")}" placeholder="Optional" />
           </div>
-        </div>
-
-        <div class="field-row single">
           <div class="field">
             <label for="workState">Primary Work State<span class="req">*</span></label>
             <select id="workState">
@@ -111,11 +132,32 @@ const UI = (function () {
           </div>
         </div>
 
-        <div class="field-row single">
+        <div class="field-row">
           <div class="field">
             <label for="hourlyRate">Hourly Rate (optional)</label>
             <input type="number" id="hourlyRate" value="${emp.hourlyRate || ""}" min="0" step="0.01" placeholder="For hourly workers only" />
             <div class="hint">Only needed if paid hourly; used for computer employee hourly-alternative test</div>
+          </div>
+          <div class="field">
+            <label for="payBasis">Pay Basis<span class="req">*</span></label>
+            <select id="payBasis">
+              <option value="">— Select pay basis —</option>
+              ${payBasisOptions}
+            </select>
+            <div class="hint">Required for the salary-basis test (Helix Energy v. Hewitt, 2023). Day-rate or fee-basis pay can disqualify exemptions even at high comp.</div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="reviewerName">Reviewer Name</label>
+            <input type="text" id="reviewerName" value="${escapeHtml(emp.reviewerName || "")}" placeholder="Optional — your name" />
+            <div class="hint">Appears on the memo for audit traceability.</div>
+          </div>
+          <div class="field">
+            <label for="effectiveDate">Effective Date</label>
+            <input type="date" id="effectiveDate" value="${escapeHtml(emp.effectiveDate || "")}" />
+            <div class="hint">When the classification takes effect.</div>
           </div>
         </div>
 
@@ -126,10 +168,16 @@ const UI = (function () {
       </div>
     `;
     document.getElementById("start-btn").addEventListener("click", onStartClick);
+    document.getElementById("classType").addEventListener("change", (e) => {
+      const wrap = document.getElementById("currentClass-field");
+      if (!wrap) return;
+      wrap.style.display = e.target.value === "reclass" ? "" : "none";
+    });
   }
 
   function onStartClick() {
     const classType = document.getElementById("classType").value;
+    const currentClass = document.getElementById("currentClass").value;
     const empName = document.getElementById("empName").value.trim();
     const jobTitle = document.getElementById("jobTitle").value.trim();
     const department = document.getElementById("department").value.trim();
@@ -139,12 +187,23 @@ const UI = (function () {
     const totalComp = totalCompRaw ? parseFloat(totalCompRaw) : baseSalary;
     const hourlyRateRaw = document.getElementById("hourlyRate").value;
     const hourlyRate = hourlyRateRaw ? parseFloat(hourlyRateRaw) : null;
+    const payBasis = document.getElementById("payBasis").value;
+    const reviewerName = document.getElementById("reviewerName").value.trim();
+    const effectiveDate = document.getElementById("effectiveDate").value;
 
     if (!jobTitle) { alert("Job Title is required."); return; }
     if (!workState) { alert("Primary Work State is required."); return; }
     if (!baseSalary || baseSalary <= 0) { alert("Annual Base Salary is required."); return; }
+    if (!payBasis) { alert("Pay Basis is required."); return; }
+    if (classType === "reclass" && !currentClass) {
+      alert("Current Classification is required for a reclassification review.");
+      return;
+    }
 
-    Engine.setEmpData({ classType, empName, jobTitle, department, workState, baseSalary, totalComp, hourlyRate });
+    Engine.setEmpData({
+      classType, currentClass, empName, jobTitle, department, workState,
+      baseSalary, totalComp, hourlyRate, payBasis, reviewerName, effectiveDate
+    });
     Engine.startQuestionnaire();
     renderApp();
   }
@@ -257,8 +316,11 @@ const UI = (function () {
   /* ── Results / memo rendering ──────────────────────────── */
 
   function renderResults() {
-    const { results, overall, riskFlags } = Engine.getResults();
+    const { results, overall, riskFlags, confidence, memoId } = Engine.getResults();
     const emp = Engine.getEmpData();
+    const answers = Engine.getAllAnswers();
+    const autoApplied = Engine.getAutoApplied();
+    const memoOpts = { confidence, memoId, answers, autoApplied };
 
     const content = document.getElementById("content");
     content.innerHTML = `
@@ -273,7 +335,7 @@ const UI = (function () {
           <button class="btn btn-primary" id="print-btn">Print / Save PDF</button>
         </div>
       </div>
-      ${Memo.renderHTML(emp, results, overall, riskFlags)}
+      ${Memo.renderHTML(emp, results, overall, riskFlags, memoOpts)}
     `;
 
     document.getElementById("back-to-questions-btn").addEventListener("click", () => {
@@ -293,7 +355,7 @@ const UI = (function () {
 
     document.getElementById("copy-btn").addEventListener("click", (e) => {
       const btn = e.currentTarget;
-      const text = Memo.renderText(emp, results, overall, riskFlags);
+      const text = Memo.renderText(emp, results, overall, riskFlags, memoOpts);
       const flash = (msg) => {
         const original = btn.textContent;
         btn.textContent = msg;
@@ -321,13 +383,14 @@ const UI = (function () {
     });
 
     document.getElementById("download-btn").addEventListener("click", () => {
-      const html = Memo.renderStandaloneHTML(emp, results, overall, riskFlags);
+      const html = Memo.renderStandaloneHTML(emp, results, overall, riskFlags, memoOpts);
       const blob = new Blob([html], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const name = (emp.empName || emp.jobTitle || "classification").replace(/[^a-zA-Z0-9]+/g, "_");
       a.href = url;
-      a.download = `FLSA_${name}_${new Date().toISOString().slice(0, 10)}.html`;
+      const id = memoId ? `_${memoId}` : "";
+      a.download = `FLSA_${name}_${new Date().toISOString().slice(0, 10)}${id}.html`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

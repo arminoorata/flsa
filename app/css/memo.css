@@ -185,16 +185,231 @@
 
 .ot-section strong { color: var(--text); font-weight: 700; }
 
-/* Risk flag blocks */
+/* Confidence indicator (inside the recommendation box) */
+.confidence-row {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.confidence-row.confidence-high {
+  background: var(--green-bg);
+  border-color: var(--green-border);
+}
+.confidence-row.confidence-medium {
+  background: var(--amber-bg);
+  border-color: var(--amber-border);
+}
+.confidence-row.confidence-low {
+  background: var(--red-bg);
+  border-color: var(--red-border);
+}
+
+.confidence-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.confidence-value {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.confidence-row.confidence-high .confidence-value { color: var(--green); }
+.confidence-row.confidence-medium .confidence-value { color: var(--amber); }
+.confidence-row.confidence-low .confidence-value { color: var(--red); }
+
+.confidence-reasons {
+  margin: 6px 0 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  list-style: disc;
+}
+
+.confidence-reasons li { padding: 1px 0; }
+
+/* Risk flag blocks (now with severity tiers) */
 .risk-block {
   padding: 12px 14px;
-  background: var(--amber-bg);
-  border-left: 3px solid var(--amber);
   border-radius: 6px;
   font-size: 13px;
   line-height: 1.55;
   color: var(--text-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  border-left: 3px solid var(--amber);
+  background: var(--amber-bg);
+}
+
+.risk-block.sev-critical {
+  background: var(--red-bg);
+  border-left-color: var(--red);
+}
+.risk-block.sev-high {
+  background: var(--amber-bg);
+  border-left-color: var(--amber);
+}
+.risk-block.sev-medium {
+  background: color-mix(in srgb, var(--amber-bg) 70%, transparent);
+  border-left-color: var(--amber);
+}
+.risk-block.sev-low {
+  background: var(--skip-bg);
+  border-left-color: var(--skip);
+}
+
+.risk-block-header {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.risk-severity {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(125,125,125,0.18);
+  color: var(--text);
+}
+
+.risk-severity.sev-critical {
+  background: var(--red);
+  color: #fff;
+}
+.risk-severity.sev-high {
+  background: var(--amber);
+  color: #fff;
+}
+.risk-severity.sev-medium {
+  background: color-mix(in srgb, var(--amber) 22%, transparent);
+  color: var(--amber);
+}
+.risk-severity.sev-low {
+  background: color-mix(in srgb, var(--skip) 22%, transparent);
+  color: var(--skip);
+}
+
+.risk-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.risk-body {
+  color: var(--text-secondary);
+}
+
+/* Reclassification helper section */
+.reclass-section .reclass-block {
+  padding: 16px 18px;
+  background: var(--accent-light);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+}
+
+.reclass-title {
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.reclass-steps {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.reclass-steps li { margin-bottom: 6px; }
+
+/* Questionnaire responses (audit trail) */
+.answer-group {
+  margin-bottom: 16px;
+}
+
+.answer-group:last-child { margin-bottom: 0; }
+
+.answer-group-title {
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.answer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+
+.answer-list li {
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.answer-list li:last-child { border-bottom: none; }
+
+.answer-legend {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.answer-legend strong {
+  color: var(--text-secondary);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.answer-q {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.answer-a {
+  color: var(--text);
+  padding-left: 16px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.answer-source {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.answer-source.user {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+}
+
+.answer-source.auto {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 /* Disclaimer */
@@ -206,6 +421,13 @@
   font-style: italic;
   color: var(--text-muted);
   line-height: 1.6;
+}
+
+.disclaimer.privacy {
+  padding-top: 8px;
+  margin-top: 6px;
+  border-top: none;
+  font-style: normal;
 }
 
 /* ── Regulatory tab ────────────────────────────────────────── */
@@ -313,5 +535,10 @@
   .exemption-block.warn { background: #f4f4f4 !important; border-left: 2px solid #000 !important; }
   .exemption-block.skip { background: #fff !important; border-left: 2px solid #666 !important; }
   .risk-block { background: #f4f4f4 !important; border-left: 2px solid #000 !important; }
+  .risk-block.sev-critical { background: #f4f4f4 !important; border-left: 3px solid #000 !important; }
+  .risk-severity { background: #fff !important; color: #000 !important; border: 1px solid #000 !important; }
+  .confidence-row { background: #fff !important; border: 1px solid #000 !important; }
+  .reclass-block { background: #fff !important; border-left: 2px solid #000 !important; }
+  .answer-list li { border-bottom-color: #999 !important; }
   .exemption-header { color: #000 !important; }
 }

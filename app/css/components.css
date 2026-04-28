@@ -445,3 +445,33 @@ html[data-theme="light"] .tab.active { color: #fff; }
 }
 
 .intake-intro strong { color: var(--text); }
+
+/* ── Privacy banner (intake screen) ────────────────────────── */
+
+.privacy-banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  margin-bottom: 16px;
+}
+
+.privacy-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.privacy-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.privacy-text strong {
+  color: var(--text);
+  font-weight: 600;
+}

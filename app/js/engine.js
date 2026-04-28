@@ -2,10 +2,8 @@
    Keeps everything in memory — no persistence (NFR-4). */
 
 const Engine = (function () {
-  const state = {
-    currentTab: "classify",     // "classify" | "regulatory"
-    stage: "info",              // "info" | "questions" | "results"
-    empData: {
+  function _emptyEmpData() {
+    return {
       classType: "new_hire",
       empName: "",
       jobTitle: "",
@@ -13,8 +11,30 @@ const Engine = (function () {
       workState: "",
       baseSalary: 0,
       totalComp: 0,
-      hourlyRate: null
-    },
+      hourlyRate: null,
+      payBasis: "",        /* Salary-basis test (Helix Energy v. Hewitt 2023). */
+      currentClass: "",    /* "exempt" | "non_exempt" — only for reclass type. */
+      reviewerName: "",    /* Optional: who performed the review. */
+      effectiveDate: ""    /* Optional: target effective date (YYYY-MM-DD). */
+    };
+  }
+
+  /* Generates a per-memo identifier for audit traceability. Format:
+     FLSA-YYYYMMDD-XXXXXX (6-char base36 random). Not cryptographically
+     unique — meant to be human-quotable in HR systems and conversation. */
+  function _generateMemoId() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const rand = Math.floor(Math.random() * 36 ** 6).toString(36).toUpperCase().padStart(6, "0");
+    return `FLSA-${y}${m}${day}-${rand}`;
+  }
+
+  const state = {
+    currentTab: "classify",     // "classify" | "regulatory"
+    stage: "info",              // "info" | "questions" | "results"
+    empData: _emptyEmpData(),
     questions: [],
     currentQuestionIdx: 0,
     answers: {},
@@ -23,7 +43,9 @@ const Engine = (function () {
     autoApplied: {},
     results: null,
     overall: null,
-    riskFlags: []
+    riskFlags: [],
+    confidence: null,           /* { level: "high"|"medium"|"low", reasons: [...] } */
+    memoId: null                /* Stable per classification run. */
   };
 
   function setTab(tab) {
@@ -50,17 +72,29 @@ const Engine = (function () {
     state.questions = buildQuestions(state.empData, state.answers);
     state.currentQuestionIdx = 0;
     _applyAutoAnswers();
+    /* Generate a memo ID once per classification run. Persists across
+       back-and-forth navigation; only resets via reset(). */
+    if (!state.memoId) state.memoId = _generateMemoId();
   }
 
   function _applyAutoAnswers() {
     for (const q of state.questions) {
-      if (q.autoAnswer === undefined) continue;
-      /* Apply if answer is missing, or if it was previously auto-applied
-         (so that intake changes propagate forward). User manual selections
-         are never overridden. */
-      if (state.answers[q.id] === undefined || state.autoApplied[q.id]) {
-        state.answers[q.id] = q.autoAnswer;
-        state.autoApplied[q.id] = true;
+      if (q.autoAnswer !== undefined) {
+        /* Apply if answer is missing, or if it was previously auto-applied
+           (so that intake changes propagate forward). User manual selections
+           are never overridden. */
+        if (state.answers[q.id] === undefined || state.autoApplied[q.id]) {
+          state.answers[q.id] = q.autoAnswer;
+          state.autoApplied[q.id] = true;
+        }
+      } else if (state.autoApplied[q.id]) {
+        /* Previously auto-applied, but the new intake data no longer
+           supports an auto-answer (e.g., salary dropped below threshold,
+           or pay basis changed to day-rate). Clear so the user must
+           answer explicitly — otherwise a stale "yes" could carry forward
+           and produce a false exempt result. */
+        delete state.answers[q.id];
+        delete state.autoApplied[q.id];
       }
     }
   }
@@ -99,9 +133,18 @@ const Engine = (function () {
 
   function getAllAnswers() { return { ...state.answers }; }
 
+  /* True if the current answer originated from an autoAnswer (not a
+     user pick). Reads the autoApplied set directly so that a user who
+     deliberately re-selected the same value as the auto-answer is NOT
+     treated as auto. */
   function isAutoAnswered(qId) {
-    const q = state.questions.find(x => x.id === qId);
-    return !!(q && q.autoAnswer !== undefined && q.autoAnswer === state.answers[qId]);
+    return !!state.autoApplied[qId];
+  }
+
+  /* For the memo audit trail: the full set of question IDs whose answer
+     came from auto-detection. */
+  function getAutoApplied() {
+    return { ...state.autoApplied };
   }
 
   function nextQuestion() {
@@ -189,28 +232,22 @@ const Engine = (function () {
     state.results = evaluateExemptions(state.answers, state.empData);
     state.overall = classifyOverall(state.results, state.empData);
     state.riskFlags = generateRiskFlags(state.answers, state.empData, state.results);
+    state.confidence = computeConfidence(state.results, state.overall, state.riskFlags, state.empData);
   }
 
   function getResults() {
     return {
       results: state.results,
       overall: state.overall,
-      riskFlags: state.riskFlags
+      riskFlags: state.riskFlags,
+      confidence: state.confidence,
+      memoId: state.memoId
     };
   }
 
   function reset() {
     state.stage = "info";
-    state.empData = {
-      classType: "new_hire",
-      empName: "",
-      jobTitle: "",
-      department: "",
-      workState: "",
-      baseSalary: 0,
-      totalComp: 0,
-      hourlyRate: null
-    };
+    state.empData = _emptyEmpData();
     state.questions = [];
     state.currentQuestionIdx = 0;
     state.answers = {};
@@ -218,6 +255,8 @@ const Engine = (function () {
     state.results = null;
     state.overall = null;
     state.riskFlags = [];
+    state.confidence = null;
+    state.memoId = null;
   }
 
   /* Progress bar: determine which stages are done / active / future.
@@ -242,7 +281,7 @@ const Engine = (function () {
     setTab,
     setEmpData, getEmpData, getStage,
     startQuestionnaire,
-    currentQuestion, selectOption, getAnswer, getAllAnswers, isAutoAnswered,
+    currentQuestion, selectOption, getAnswer, getAllAnswers, isAutoAnswered, getAutoApplied,
     nextQuestion, prevQuestion, jumpToStage, goBackToLastQuestion,
     getResults,
     reset,
