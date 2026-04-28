@@ -60,6 +60,14 @@ All notable changes to the FLSA Classification Tool. Per spec/09-maintenance-and
 
 **Codex review iterations: 8 (counting both post-r7 follow-ups). Verdict trajectory updated to: r1 BLOCKED → r2 BLOCKED → r3 READY → r4 BLOCKED → r5 BLOCKED → r6 BLOCKED → r7 BLOCKED → post-r7 BLOCKED → post-r7-2 BLOCKED with the multi-state admin false-exempt as the binding F500 issue.** With this round, the conservative "fail admin if any in-scope state is strict and admin pass depends on customer_ops" rule closes the realistic CA+NY case without requiring full per-exemption multi-state evaluation across all six exemptions. Edge cases involving exemption interactions across non-overlapping rule sets (e.g., NY-NYC strict-admin + CA stricter-computer for the SAME role with different binding states for different exemptions) remain a documented limitation.
 
+**Codex post-r7 third follow-up — three risk-flag/copy cleanups (memo trust):**
+
+- **Medium: Federal-only Computer flag suppressed when Computer not actually claimed.** `comp_salary` auto-populates regardless of `comp_role`, so a comp_role=no admin user previously triggered a "Computer exemption: federal-only threshold met" flag — confusing reviewers because the Computer exemption is skipped on the result side. Gated on `_isClaimed("computer")` so the flag only fires when Computer is actually a claimed exemption (pass or warn).
+- **Medium/Low: Customer-facing-admin flag suppressed when admin already failed.** The "Admin exemption based on customer-facing duties... if the employee relocates to NY/Oregon" flag previously contradicted the new admin: FAIL result for in-scope strict-admin cases. Gated on `_isClaimed("admin")` so it only fires when admin actually passed under the federal/non-strict standard. The flag is meaningful as a future-relocation warning, not when admin already failed.
+- **Low: Multi-state flag copy updated for accuracy.** Previously said "per-exemption multi-state evaluation is not modeled" — but Computer (per-exemption Computer routing) and Administrative (strict-admin in scope) now do have per-exemption handling. Rewritten to describe the actual per-exemption coverage: general routing for HCE/Exec/Prof/Sales/Admin-salary, per-exemption Computer routing, and any-in-scope strict-admin for the customer-facing rule.
+
+**Test coverage**: 28 scenarios + boot test (with 2 additional negative-assertion cleanups) + smoke test all pass.
+
 ## [Unreleased] — 2026-04-28
 
 **Total Rewards / HR practitioner upgrade.** Ten improvements driven by an in-character TR-expert review of the live tool. Each item closes a real gap between "the tool gives an answer" and "the tool produces an audit-grade classification an HR generalist can defend without separately consulting counsel for routine cases."

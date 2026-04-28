@@ -806,8 +806,13 @@ function generateRiskFlags(answers, empData, results) {
     }
   }
 
-  /* Flag: Federal-Only Computer Threshold (paid above federal min, below state) */
-  if (answers.comp_salary === "federal_only") {
+  /* Flag: Federal-Only Computer Threshold (paid above federal min, below state).
+     Gated on _isClaimed("computer") so the flag only fires when the
+     Computer exemption is actually being relied on. The auto-answer
+     for comp_salary populates regardless of comp_role, so without this
+     gate the flag would fire on comp_role=no users (Computer skipped)
+     and confuse HR reviewers. Codex post-r7-followup-2 Medium. */
+  if (answers.comp_salary === "federal_only" && _isClaimed("computer")) {
     flags.push(_flag(
       "high",
       "Computer exemption: federal-only threshold met",
@@ -815,8 +820,16 @@ function generateRiskFlags(answers, empData, results) {
     ));
   }
 
-  /* Flag: Customer Ops admin (passes federal, fails strict states) */
-  if (answers.admin_biz_ops === "customer_ops" && STRICT_ADMIN_STATES.indexOf(stateKey) === -1) {
+  /* Flag: Customer Ops admin (passes federal, fails strict states).
+     Only fires when admin actually passed under the federal/non-strict
+     standard. If admin already failed because a strict-admin state was
+     in scope (post-r7-followup fix), this flag is misleading — the
+     "qualifies under federal law... if the employee relocates to NY/OR"
+     copy contradicts the admin: FAIL result above it. Codex post-r7-
+     followup-2 Medium/Low. */
+  if (answers.admin_biz_ops === "customer_ops" &&
+      STRICT_ADMIN_STATES.indexOf(stateKey) === -1 &&
+      _isClaimed("admin")) {
     flags.push(_flag(
       "medium",
       "Admin exemption based on customer-facing duties",
@@ -851,7 +864,7 @@ function generateRiskFlags(answers, empData, results) {
     flags.push(_flag(
       "high",
       "Multi-state employee — analysis applied the most-protective standard",
-      `Employee works in multiple states: ${allStates.join(", ")}. The analysis above was performed under ${analysisState} rules because that jurisdiction's combined restrictiveness score (EAP threshold + HCE-rejection / strict-admin / computer-salary bonuses) is the highest among the selected states. The tool applies a single most-protective state's rules; per-exemption multi-state evaluation is not modeled. Verify the employee actually performs enough work in ${analysisState} to make its rules applicable (typically the state where the employee performs the work, not where the employer is headquartered). For employees who split time across multiple jurisdictions with different OT rules (e.g., CA daily OT vs. federal weekly OT), each workweek's hours may need to be allocated to each state separately for OT calculation purposes.`
+      `Employee works in multiple states: ${allStates.join(", ")}. The general analysis (HCE / Executive / Professional / outside Sales / Admin salary level) was performed under ${analysisState} rules — the jurisdiction with the highest composite restrictiveness score (EAP threshold + HCE-rejection / strict-admin bonuses). The Computer exemption uses its own per-exemption routing (the state with the strictest computer-specific threshold for the employee's pay basis), and the Administrative exemption applies any in-scope strict-admin state's customer-facing rule. Other exemption duties tests still use the routed analysis state's rules — verify that ${analysisState} is where the employee actually performs the work (typically the state where the employee performs the work, not where the employer is headquartered). For employees who split time across multiple jurisdictions with different OT rules, each workweek's hours may need to be allocated to each state separately for OT calculation purposes.`
     ));
   }
 

@@ -672,6 +672,35 @@ const fedOnlyFlag = cawaFlags.find(f => f.title.indexOf("federal-only threshold"
 assert(fedOnlyFlag, "federal-only Computer flag should fire for CA+WA $100K computer salary");
 assert(fedOnlyFlag && fedOnlyFlag.body.indexOf("California") !== -1, `federal-only flag must name California (Computer-routed state), got: ${fedOnlyFlag && fedOnlyFlag.body}`);
 
+/* Regression for codex post-r7-followup-2 Medium: federal-only
+   Computer flag must NOT fire when comp_role=no (Computer not
+   claimed). The auto-answer for comp_salary populates regardless of
+   comp_role, which previously emitted a misleading "Computer
+   exemption: federal-only threshold met" flag for non-computer
+   roles. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Customer Success Mgr", workState: "California", additionalStates: ["New York (NYC/Nassau/Suffolk/Westchester)"], baseSalary: 100000, totalComp: 100000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "no");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "yes");
+window.Engine.selectOption("admin_biz_ops", "customer_ops");
+window.Engine.selectOption("admin_state_restrict", "acknowledged");
+window.Engine.selectOption("admin_discretion", "yes");
+window.Engine.selectOption("exec_salary", "yes");
+window.Engine.selectOption("exec_manage", "no");
+window.Engine.selectOption("prof_salary", "yes");
+window.Engine.selectOption("prof_advanced", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const noCompFlags = window.Engine.getResults().riskFlags;
+const phantomCompFlag = noCompFlags.find(f => f.title.indexOf("Computer exemption: federal-only") !== -1);
+assert(!phantomCompFlag, `federal-only Computer flag MUST NOT fire when comp_role=no (Computer not claimed); got ${phantomCompFlag && phantomCompFlag.title}`);
+/* And the customer-facing-admin flag must NOT fire either, because
+   admin already failed under the new strict-admin-in-scope rule. */
+const phantomAdminCustFlag = noCompFlags.find(f => f.title.indexOf("Admin exemption based on customer-facing duties") !== -1);
+assert(!phantomAdminCustFlag, `customer-facing-admin flag MUST NOT fire when admin already failed under strict-admin rule; got ${phantomAdminCustFlag && phantomAdminCustFlag.title}`);
+
 /* Regression: single-state employee should NOT see the multi-state
    allocation reminder. */
 window.Engine.reset();
