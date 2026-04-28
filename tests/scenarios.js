@@ -33,7 +33,7 @@ const SCENARIOS = [
       sales_check: "no"
     },
     expect: {
-      hce: "fail",
+      hce: "skip",   /* CA does not recognize federal HCE shortcut */
       computer: "warn",
       admin: "fail",
       executive: "fail",
@@ -226,14 +226,14 @@ const SCENARIOS = [
       sales_check: "no"
     },
     expect: {
-      hce: "pass",
+      hce: "skip",   /* WA rejects federal HCE shortcut */
       computer: "pass",
       admin: "fail",
       executive: "fail",
       professional: "fail",
       sales: "skip",
       outcome: "exempt",
-      passing_contains: ["Highly Compensated Employee (HCE)", "Computer Employee"]
+      passing_contains: ["Computer Employee"]
     }
   },
 
@@ -426,7 +426,7 @@ const SCENARIOS = [
       executive: "fail",
       professional: "fail",
       sales: "skip",
-      outcome: "exempt",
+      outcome: "review",  /* CRITICAL Helix flag blocks exempt recommendation */
       flags_contain: ["Helix Energy v. Hewitt"]
     }
   },
@@ -467,7 +467,7 @@ const SCENARIOS = [
       professional: "fail",
       sales: "skip",
       outcome: "exempt",
-      flags_contain: ["no state-specific overlay encoded"]
+      flags_contain: ["Not validated for Florida"]
     }
   },
 
@@ -513,6 +513,261 @@ const SCENARIOS = [
     }
   },
 
+  /* Scenario 20: Colorado high-comp role — Colorado HAS its own HCE
+     under COMPS Order #40 at $130,014 (2.25 × $57,784 EAP). This role
+     at $250K total comp passes the CO HCE threshold. The tool must
+     use the CO threshold (more protective than federal $107,432), not
+     skip HCE entirely. Regression for codex r4 HIGH finding. */
+  {
+    id: 20,
+    name: "Colorado High-Comp HR Director (HCE uses CO $130,014 threshold)",
+    source: "proposed (codex r4 HIGH: CO HCE at $130,014, not federal $107,432)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "HR Director",
+      workState: "Colorado",
+      baseSalary: 200000,
+      totalComp: 250000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "yes",
+      hce_office: "yes",
+      hce_one_duty: "admin_discretion",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "yes",
+      admin_discretion: "yes",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "pass",   /* CO HCE at $130,014; $250K comp meets it */
+      computer: "skip",
+      admin: "pass",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "exempt",
+      passing_contains: ["Administrative", "Highly Compensated Employee (HCE)"]
+    }
+  },
+
+  /* Scenario 20b: Colorado at federal HCE level but BELOW Colorado's
+     state HCE — must NOT pass HCE because the state threshold
+     ($130,014) is the more-protective standard. */
+  {
+    id: 24,
+    name: "Colorado at $115K (above federal HCE, BELOW CO HCE)",
+    source: "proposed (codex r4: CO HCE more-protective $130,014 must apply)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Senior Manager",
+      workState: "Colorado",
+      baseSalary: 100000,
+      totalComp: 115000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",   /* auto-no because $115K < $130,014 CO threshold */
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "yes",
+      admin_discretion: "yes",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "skip",
+      admin: "pass",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "exempt"
+    }
+  },
+
+  /* Scenario 21: NY Pharmacist at $50K — passes professional duties
+     but salary is below NY's executive/admin EAP threshold ($66,300
+     NYC). Tool must use the federal-only $35,568 threshold for the
+     learned-professional exemption since NY has no state professional
+     salary minimum. Regression for codex review #4 HIGH finding. */
+  {
+    id: 21,
+    name: "NY Learned Professional below state EAP (no state pro min)",
+    source: "proposed (codex r4 HIGH: NY professional has no state salary min)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Pharmacist",
+      workState: "New York (rest of state)",
+      baseSalary: 50000,
+      totalComp: 50000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "no",
+      admin_salary: "no",
+      exec_salary: "no",
+      prof_salary: "yes",  /* meets federal $35,568 */
+      prof_advanced: "yes",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "skip",
+      admin: "fail",
+      executive: "fail",
+      professional: "pass",  /* would have failed if state min were applied */
+      sales: "skip",
+      outcome: "exempt",
+      passing_contains: ["Learned Professional"]
+    }
+  },
+
+  /* Scenario 22: New Jersey overlay — verifies NJ resolves to its
+     own threshold key (not federal). Regression for codex review #4
+     state-coverage finding. */
+  {
+    id: 22,
+    name: "New Jersey Compliance Officer (state overlay resolves)",
+    source: "proposed (codex r4: NJ added as state overlay)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Compliance Officer",
+      workState: "New Jersey",
+      baseSalary: 95000,
+      totalComp: 100000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "yes",
+      admin_discretion: "yes",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "skip",
+      admin: "pass",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "exempt"
+    }
+  },
+
+  /* Scenario 25: Multi-state CA + WA salary computer at $100K. CA's
+     computer-salary threshold is $122,573, WA's is $80,168. The most-
+     protective state for a SALARY-paid computer employee at $100K is
+     CA (would block; $100K < $122,573). Per-exemption routing must
+     use CA's computer threshold even though WA wins the general
+     EAP routing. Regression for codex r7 HIGH finding. */
+  {
+    id: 25,
+    name: "Multi-state CA+WA Salary Computer @ $100K (per-exemption Computer routing)",
+    source: "proposed (codex r7 HIGH: per-exemption Computer routing)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Software Engineer",
+      workState: "California",
+      additionalStates: ["Washington"],
+      analysisState: "Washington",
+      primaryWorkState: "California",
+      baseSalary: 100000,
+      totalComp: 100000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "yes",
+      comp_salary: "federal_only",  /* meets fed but not CA $122,573 */
+      comp_duties: "design_dev",
+      comp_independent: "yes",
+      admin_salary: "yes",
+      admin_biz_ops: "production",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "skip",   /* CA/WA both reject HCE */
+      computer: "warn",   /* federal_only path → warn under more-protective standard */
+      admin: "fail",
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "review"
+    }
+  },
+
+  /* Scenario 23: Multi-state Oregon (strict admin) + Illinois (no extras)
+     at the same EAP threshold. The most-protective state must be OREGON,
+     not Illinois. Regression for codex r4 finding: previously
+     getMostProtectiveState used alphabetical tiebreak on tied EAPs and
+     would route to Illinois, losing OR's strict admin rule.
+     Customer-facing admin must FAIL (because OR's strict admin rules
+     apply). */
+  {
+    id: 23,
+    name: "Multi-state OR primary + IL additional (OR strict admin must apply)",
+    source: "proposed (codex r4 finding: tied-EAP tiebreak must prefer restrictiveness)",
+    empData: {
+      classType: "new_hire",
+      jobTitle: "Customer Operations Consultant",
+      workState: "Oregon",
+      additionalStates: ["Illinois"],
+      analysisState: "Oregon",
+      primaryWorkState: "Oregon",
+      baseSalary: 120000,
+      totalComp: 120000,
+      hourlyRate: null,
+      payBasis: "salary"
+    },
+    answers: {
+      hce_start: "no",
+      comp_role: "no",
+      admin_salary: "yes",
+      admin_biz_ops: "customer_ops",
+      admin_state_restrict: "acknowledged",
+      admin_discretion: "yes",
+      exec_salary: "yes",
+      exec_manage: "no",
+      prof_salary: "yes",
+      prof_advanced: "no",
+      sales_check: "no"
+    },
+    expect: {
+      hce: "fail",
+      computer: "skip",
+      admin: "fail",  /* OR strict admin blocks customer_ops path */
+      executive: "fail",
+      professional: "fail",
+      sales: "skip",
+      outcome: "non-exempt"
+    }
+  },
+
   /* Scenario 19: Hourly programmer above federal $27.63/hr but below
      California $58.85/hr state hourly minimum. The evaluator must
      downgrade Computer to "warn" so the more-protective state standard
@@ -542,7 +797,7 @@ const SCENARIOS = [
       sales_check: "no"
     },
     expect: {
-      hce: "fail",
+      hce: "skip",   /* CA rejects federal HCE shortcut */
       computer: "warn",
       admin: "fail",
       executive: "fail",
@@ -663,7 +918,7 @@ const SCENARIOS = [
       executive: "pass",
       professional: "fail",
       sales: "skip",
-      outcome: "exempt",
+      outcome: "review",  /* CRITICAL fee-basis-incompatible flag blocks exempt */
       flags_contain: ["Fee-basis pay incompatible with Executive exemption"]
     }
   },
@@ -757,8 +1012,11 @@ const SCENARIOS = [
 /* Run one scenario. Returns { id, name, pass: bool, failures: [] }. */
 function runScenario(s) {
   const results = evaluateExemptions(s.answers, s.empData);
-  const overall = classifyOverall(results, s.empData);
+  /* Flags must be computed BEFORE classifyOverall so critical flags
+     can short-circuit an otherwise-passing exemption (mirrors the
+     order in Engine._evaluate). */
   const flags = generateRiskFlags(s.answers, s.empData, results);
+  const overall = classifyOverall(results, s.empData, flags);
   const failures = [];
 
   for (const key of ["hce", "computer", "admin", "executive", "professional", "sales"]) {

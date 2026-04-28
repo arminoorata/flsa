@@ -14,12 +14,12 @@ const REGULATORY_CONTENT = {
       body: "The April 2024 final rule would have raised EAP thresholds to $1,128/week ($58,656/year) and HCE to $151,164/year by January 1, 2025. A federal judge in the Eastern District of Texas found the DOL exceeded its authority by displacing the duties-based test with a predominantly salary-based test. The ruling reversed both the July 2024 increase ($844/week) and the planned January 2025 increase, reverting everything to 2019 levels."
     },
     {
-      title: "Trump DOL, Long-Term Rulemaking Planned",
-      body: "The Trump DOL's Spring 2025 regulatory agenda listed overtime rulemaking as a \"long-term\" project with no specific proposed rule date. Historically, the Trump DOL has favored modest increases (the 2019 rule raised the threshold from $455/week to $684/week). Any new rule would go through notice-and-comment rulemaking, meaning 12+ months from proposal to implementation. Also on the agenda: proposed rules on independent contractor classification (September 2025 target) and joint employer standards (December 2025 target)."
+      title: "Federal Rulemaking, Active Pipeline",
+      body: "The DOL's active rulemaking pipeline at this tool's last legal review included proposed rules on overtime salary thresholds, independent contractor classification, and joint employer standards. Specific proposed/final rule dates change frequently; verify the current Reginfo Unified Agenda and any open NPRM comment periods before relying on \"current\" rules. Historically, the Trump DOL has favored modest threshold increases (the 2019 rule raised the EAP threshold from $455/week to $684/week). Any new rule goes through notice-and-comment rulemaking — typically 12+ months from proposal to implementation."
     },
     {
-      title: "Overtime Tax Proposal",
-      body: "Trump proposed eliminating taxes on overtime pay during his 2024 campaign. No legislation has been enacted. If passed, this would not change classification rules but would affect take-home pay calculations for non-exempt employees."
+      title: "Qualified Overtime Deduction (One Big Beautiful Bill Act, 2025)",
+      body: "The 2025 OBBBA created a federal qualified overtime deduction that allows non-exempt employees to deduct a portion of overtime premium pay for tax years 2025-2028 (the temporary window). Verify the current IRS guidance on caps, phaseouts, and substantiation. This is a TAX rule, not a wage-and-hour rule — it does NOT change FLSA classification, the salary-basis test, or the duties tests. It does affect take-home pay calculations for non-exempt employees and may interact with payroll system reporting (W-2 Box 14 / equivalent). Confirm payroll provider has implemented the deduction before relying on this in employee-facing communications."
     }
   ],
   state: [
@@ -32,12 +32,24 @@ const REGULATORY_CONTENT = {
       body: "Broadens the definition of \"wages\" and \"wage rates\" for pay transparency purposes to include salary, overtime pay, bonuses, stock options, profit sharing, life insurance, vacation/holiday pay, and benefits. Job postings for exempt roles must include all forms of compensation, not just base salary. The limitations period for claims expanded from 2 to 3 years."
     },
     {
-      title: "States That Do NOT Recognize HCE Exemption",
-      body: "Connecticut does not recognize the federal highly compensated employee exemption. Employees in CT must meet the full duties test regardless of compensation. Verify other states as laws evolve."
+      title: "States That Do NOT Recognize the Federal HCE Shortcut",
+      body: "California, Connecticut, and Washington reject the federal HCE reduced-duties test. Employees in those states must meet the full duties test regardless of compensation. CA's stricter \"primarily engaged\" rule (Labor Code §515) and WA's L&I duties test override the federal HCE pathway. Connecticut does not recognize HCE at all."
+    },
+    {
+      title: "Colorado HCE Has Its Own Higher Threshold",
+      body: "Colorado COMPS Order #40 recognizes the HCE exemption but at $130,014/year (2.25 × the CO EAP threshold of $57,784) — substantially higher than the federal $107,432. The more-protective standard wins, so a CO HCE classification requires meeting the CO threshold."
+    },
+    {
+      title: "New York Learned Professional, No State Salary Minimum",
+      body: "New York's executive and administrative exemptions require the state EAP threshold ($1,275/week NYC; $1,199.10/week rest-of-state). The learned professional exemption has NO state salary minimum — only the federal $684/week applies. A $50K NY pharmacist still meets the salary test even though they fall below NY's exec/admin threshold."
     },
     {
       title: "New York & Oregon, Stricter Administrative Exemption",
       body: "The administrative exemption in these states cannot be satisfied by customer-facing duties alone. The employee's primary duty must relate to the management or general business operations of the employer itself."
+    },
+    {
+      title: "Newly-Encoded State Overlays (NJ, MA, IL, PA, MN)",
+      body: "These states mirror the federal salary level but each has its own statutory framework: New Jersey (NJWHL), Massachusetts (Wage Act), Illinois (IMWL — note Cook County / Chicago wage ordinances apply locally), Pennsylvania (PMWA — stricter fluctuating-workweek rules), and Minnesota (MFLSA — OT after 48 hrs/week for some employers). The tool applies federal-default rules; consult counsel for industry-specific carve-outs."
     }
   ]
 };

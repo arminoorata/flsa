@@ -19,22 +19,35 @@ function _hceDutyLabel(value) {
   return map[value] || value;
 }
 
-function evaluateHCE(answers, empData, stateKey) {
+function evaluateHCE(answers, empData, stateKey, threshold) {
   const title = "Highly Compensated Employee (HCE)";
-  if (stateKey === "connecticut") {
+  /* States that reject the federal HCE shortcut because their state
+     duties test (typically "primarily engaged" / 50%+ time on exempt
+     work) is more protective than the federal HCE reduced-duties test.
+     Driven by the per-state hceApplicable flag in thresholds.js so this
+     stays maintainable as new state overlays are added. */
+  if (!threshold && typeof THRESHOLDS !== "undefined") threshold = THRESHOLDS[stateKey];
+  if (threshold && threshold.hceApplicable === false) {
     return {
       status: "skip",
       title,
-      summary: "Not available in Connecticut. State law does not recognize the HCE exemption.",
+      summary: `Not available in ${threshold.label}. State law does not recognize the federal HCE shortcut — the full duties test must be applied regardless of compensation.`,
       details: []
     };
   }
   if (answers.hce_start === "no") {
     const totalComp = empData.totalComp || empData.baseSalary || 0;
+    /* Use the state-specific HCE threshold when the state defines one
+       (e.g., Colorado COMPS Order #40 $130,014); fall back to federal
+       $107,432 otherwise. */
+    const hceThresh = (threshold && threshold.hceApplicable && threshold.hce) ? threshold.hce : FEDERAL_HCE_THRESHOLD;
+    const stateNote = (threshold && threshold.hceApplicable && threshold.hce && threshold.hce > FEDERAL_HCE_THRESHOLD)
+      ? ` (${threshold.label} state HCE threshold; federal is $${_fmt(FEDERAL_HCE_THRESHOLD)})`
+      : "";
     return {
       status: "fail",
       title,
-      summary: `Total compensation ($${_fmt(totalComp)}) is below the $107,432 threshold.`,
+      summary: `Total compensation ($${_fmt(totalComp)}) is below the $${_fmt(hceThresh)} threshold${stateNote}.`,
       details: ["Salary test: FAIL"]
     };
   }
@@ -60,12 +73,16 @@ function evaluateHCE(answers, empData, stateKey) {
     answers.hce_one_duty &&
     answers.hce_one_duty !== "none"
   ) {
+    const hceThresh = (threshold && threshold.hceApplicable && threshold.hce) ? threshold.hce : FEDERAL_HCE_THRESHOLD;
+    const stateNote = (threshold && threshold.hceApplicable && threshold.hce && threshold.hce > FEDERAL_HCE_THRESHOLD)
+      ? ` (${threshold.label} state HCE threshold)`
+      : "";
     return {
       status: "pass",
       title,
       summary: "Employee meets all HCE requirements.",
       details: [
-        "Compensation test: PASS",
+        `Compensation test: PASS at $${_fmt(hceThresh)}${stateNote}`,
         "Office work test: PASS",
         `Exempt duty test: PASS (${_hceDutyLabel(answers.hce_one_duty)})`
       ]
@@ -445,11 +462,31 @@ function evaluateSales(answers) {
 }
 
 function evaluateExemptions(answers, empData) {
-  const stateKey = getStateKey(empData.workState);
-  const threshold = getThreshold(empData.workState);
+  /* For multi-state employees, analysisState resolves to the most-
+     protective state for general (EAP / admin / exec / prof / HCE)
+     routing. Falls back to workState for single-state cases. */
+  const analysisState = (empData && empData.analysisState) || (empData && empData.workState) || "";
+  const stateKey = getStateKey(analysisState);
+  const threshold = getThreshold(analysisState);
+
+  /* Computer-exemption routing is per-exemption: pick the state whose
+     computer threshold is most protective for the user's pay basis.
+     This corrects the case where general routing picks Washington
+     (highest EAP) but the binding constraint for a salary-paid
+     computer role is California's $122,573 minimum. */
+  let computerThreshold = threshold;
+  const additional = (empData && empData.additionalStates && Array.isArray(empData.additionalStates))
+    ? empData.additionalStates.filter(s => s && s !== empData.primaryWorkState)
+    : [];
+  if (additional.length > 0 && typeof getMostProtectiveStateForComputer === "function") {
+    const all = [empData.primaryWorkState || empData.workState].concat(additional).filter(Boolean);
+    const compState = getMostProtectiveStateForComputer(all, empData.payBasis);
+    if (compState) computerThreshold = getThreshold(compState);
+  }
+
   return {
-    hce: evaluateHCE(answers, empData, stateKey),
-    computer: evaluateComputer(answers, empData, threshold),
+    hce: evaluateHCE(answers, empData, stateKey, threshold),
+    computer: evaluateComputer(answers, empData, computerThreshold),
     admin: evaluateAdmin(answers, empData, stateKey, threshold),
     executive: evaluateExecutive(answers),
     professional: evaluateProfessional(answers),
@@ -457,7 +494,7 @@ function evaluateExemptions(answers, empData) {
   };
 }
 
-function classifyOverall(results, empData) {
+function classifyOverall(results, empData, riskFlags) {
   const order = ["hce", "computer", "admin", "executive", "professional", "sales"];
   const passing = [];
   const borderline = [];
@@ -467,12 +504,27 @@ function classifyOverall(results, empData) {
     if (r.status === "pass") passing.push(r.title);
     else if (r.status === "warn") borderline.push(r.title);
   }
-  const stateKey = getStateKey(empData.workState);
-  const threshold = getThreshold(empData.workState);
+  const analysisState = (empData && empData.analysisState) || (empData && empData.workState) || "";
+  const stateKey = getStateKey(analysisState);
+  const threshold = getThreshold(analysisState);
   const hasStateOverlay = stateKey !== "federal";
   const stateLabel = threshold.label;
 
-  if (passing.length > 0) {
+  /* CRITICAL risk flags block any "exempt" recommendation. The flag is
+     asserting an unresolved compliance defect (Helix day-rate, hourly
+     incompatibility, fee-basis Executive, etc.). Even if a duties test
+     passes, the recommendation must escalate to "review" until the
+     critical issue is resolved — otherwise the memo header says EXEMPT
+     while a flag below it says treat as non-exempt.
+
+     Critical flags do NOT escalate a NON-EXEMPT outcome to review. A
+     critical reclass back-pay warning, for example, is a caveat about
+     consequences — the underlying classification verdict is still
+     non-exempt. */
+  const criticalFlags = (riskFlags || []).filter(f => f && f.severity === "critical");
+  const hasCritical = criticalFlags.length > 0;
+
+  if (passing.length > 0 && !hasCritical) {
     const passingList = passing.join(" and ");
     const suffix = hasStateOverlay ? ` (federal and ${stateLabel} state)` : " (federal)";
     let rec = `RECOMMEND: Classify as EXEMPT under the ${passingList} exemption${passing.length > 1 ? "s" : ""}${suffix}.`;
@@ -480,22 +532,28 @@ function classifyOverall(results, empData) {
       const borderlineList = borderline.length > 2
         ? borderline.slice(0, -1).join(", ") + ", and " + borderline[borderline.length - 1]
         : borderline.join(" and ");
-      const isAre = borderline.length > 1 ? "are" : "is";
       rec += `\n\nNote: Additional exemptions are borderline (${borderlineList}). The qualifying exemption${passing.length > 1 ? "s" : ""} above ${passing.length > 1 ? "are" : "is"} sufficient, but borderline results are documented below.`;
     }
-    return { outcome: "exempt", text: rec, passing, borderline };
+    return { outcome: "exempt", text: rec, passing, borderline, blockedByCritical: false };
   }
+
+  if (passing.length > 0 && hasCritical) {
+    const titles = criticalFlags.map(f => f.title).join("; ");
+    const rec = `RECOMMEND: LEGAL REVIEW REQUIRED. ${passing.join(" and ")} would otherwise pass, but one or more CRITICAL compliance issues must be resolved before any exempt classification can be applied: ${titles}. Treat as NON-EXEMPT for overtime purposes until counsel confirms the exception (e.g., 29 CFR 541.604(b) guaranteed weekly minimum, or 541.605 fee-basis equivalence) is documented.`;
+    return { outcome: "review", text: rec, passing, borderline, blockedByCritical: true };
+  }
+
   if (borderline.length > 0) {
     const borderlineList = borderline.length > 2
       ? borderline.slice(0, -1).join(", ") + ", and " + borderline[borderline.length - 1]
       : borderline.join(" and ");
     const isAre = borderline.length > 1 ? "are" : "is";
     const rec = `RECOMMEND: LEGAL REVIEW REQUIRED. No exemption clearly passed, but ${borderlineList} exemption${borderline.length > 1 ? "s" : ""} ${isAre} borderline. Recommend consulting employment counsel before classifying.`;
-    return { outcome: "review", text: rec, passing, borderline };
+    return { outcome: "review", text: rec, passing, borderline, blockedByCritical: false };
   }
   const stateClause = hasStateOverlay ? ` or ${stateLabel} state law` : "";
   const rec = `RECOMMEND: Classify as NON-EXEMPT. This role does not meet the requirements for any tested exemption under federal${stateClause}. The employee is entitled to overtime pay.`;
-  return { outcome: "non-exempt", text: rec, passing, borderline };
+  return { outcome: "non-exempt", text: rec, passing, borderline, blockedByCritical: false };
 }
 
 /* ── Risk flag generation ────────────────────────────────────────────
@@ -509,9 +567,17 @@ function _flag(severity, title, body) {
 
 function generateRiskFlags(answers, empData, results) {
   const flags = [];
-  const stateKey = getStateKey(empData.workState);
-  const threshold = getThreshold(empData.workState);
+  const analysisState = (empData && empData.analysisState) || (empData && empData.workState) || "";
+  const stateKey = getStateKey(analysisState);
+  const threshold = getThreshold(analysisState);
   const stateLabel = threshold.label;
+  /* Multi-state computed up front; used by both the multi-state flag
+     and the non-overlay-state flag (which must check ALL selected
+     states, not just the analysis state). */
+  const primary = (empData && empData.primaryWorkState) || (empData && empData.workState) || "";
+  const additionalStates = (empData && empData.additionalStates && Array.isArray(empData.additionalStates))
+    ? empData.additionalStates.filter(s => s && s !== primary)
+    : [];
   const payBasis = empData.payBasis || "";
   const totalComp = empData.totalComp || empData.baseSalary || 0;
 
@@ -680,14 +746,44 @@ function generateRiskFlags(answers, empData, results) {
     ));
   }
 
-  /* Flag: Non-overlay state (no encoded state-specific rules) */
-  const isFederalOnly = stateKey === "federal";
-  const stateProvided = empData.workState && empData.workState.length > 0;
-  if (isFederalOnly && stateProvided) {
+  /* Flag: Multi-state employee — analysis was performed under the
+     most-protective state. Tell the user explicitly which state we
+     used and which others are in scope. (primary + additionalStates
+     declared at the top of generateRiskFlags.) */
+  if (additionalStates.length > 0) {
+    const allStates = [primary].concat(additionalStates).filter(Boolean);
     flags.push(_flag(
-      "low",
-      `${empData.workState} has no state-specific overlay encoded`,
-      `This tool does not encode state-specific EAP rules for ${empData.workState} (federal standards apply by default). Verify locally that no state minimum-wage law, paid-leave law, salary-history rule, predictive-scheduling ordinance, or city/county wage law affects this classification before finalizing.`
+      "high",
+      "Multi-state employee — analysis applied the most-protective standard",
+      `Employee works in multiple states: ${allStates.join(", ")}. The analysis above was performed under ${analysisState} rules because that jurisdiction's combined restrictiveness score (EAP threshold + HCE-rejection / strict-admin / computer-salary bonuses) is the highest among the selected states. The tool applies a single most-protective state's rules; per-exemption multi-state evaluation is not modeled. Verify the employee actually performs enough work in ${analysisState} to make its rules applicable (typically the state where the employee performs the work, not where the employer is headquartered). For employees who split time across multiple jurisdictions with different OT rules (e.g., CA daily OT vs. federal weekly OT), each workweek's hours may need to be allocated to each state separately for OT calculation purposes.`
+    ));
+  }
+
+  /* Flag: Non-overlay state (no encoded state-specific rules). For
+     multi-state employees we must check EVERY selected state, not just
+     the analysis state — otherwise a Texas-primary + NJ-additional case
+     would route analysis to NJ and silently drop the Texas warning
+     even though Texas is still in scope and may have its own rules.
+     Multiple non-overlay states are grouped into a single flag so a
+     TX+FL+NV pick doesn't produce three near-identical warnings. */
+  const allSelectedStates = [];
+  if (primary) allSelectedStates.push(primary);
+  for (const s of additionalStates) allSelectedStates.push(s);
+  const nonOverlayStates = [];
+  const seenNonOverlay = {};
+  for (const s of allSelectedStates) {
+    if (!s || seenNonOverlay[s]) continue;
+    seenNonOverlay[s] = true;
+    if (getStateKey(s) === "federal") nonOverlayStates.push(s);
+  }
+  if (nonOverlayStates.length > 0) {
+    const list = nonOverlayStates.join(", ");
+    const itThey = nonOverlayStates.length > 1 ? "they" : "it";
+    const itsTheir = nonOverlayStates.length > 1 ? "their" : "its";
+    flags.push(_flag(
+      "medium",
+      `Not validated for ${list}`,
+      `This tool's classification logic has NOT been validated against the state law of: ${list}. Federal FLSA standards are applied by default, but ${itThey} may have ${itsTheir} own EAP duties tests, salary thresholds, or industry-specific rules that produce a different (more protective) result. Before finalizing, verify for each: (a) state EAP salary level if any; (b) state-specific duties tests (e.g., "primarily engaged" vs. federal "primary duty"); (c) county/city wage ordinances; (d) industry carve-outs (healthcare, hospitality, transportation). Treat this output as a starting point, not a final answer.`
     ));
   }
 
@@ -803,7 +899,8 @@ function computeConfidence(results, overall, riskFlags, empData) {
 }
 
 function generateOvertimeRules(empData) {
-  const stateKey = getStateKey(empData.workState);
+  const analysisState = (empData && empData.analysisState) || (empData && empData.workState) || "";
+  const stateKey = getStateKey(analysisState);
   const sections = [];
   sections.push({
     label: "Federal",

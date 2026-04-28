@@ -119,6 +119,19 @@ const UI = (function () {
           </div>
         </div>
 
+        <div class="field-row single">
+          <div class="field">
+            <label for="additionalStates">Additional Work States (multi-state employees)</label>
+            <select id="additionalStates" multiple size="4">
+              ${STATES.map(s => {
+                const sel = (Array.isArray(emp.additionalStates) && emp.additionalStates.indexOf(s) !== -1) ? " selected" : "";
+                return `<option value="${escapeHtml(s)}"${sel}>${escapeHtml(s)}</option>`;
+              }).join("")}
+            </select>
+            <div class="hint">Hold Ctrl / Cmd to select multiple. The analysis will use the most-protective state's rules; a HIGH risk flag will note all states in scope.</div>
+          </div>
+        </div>
+
         <div class="field-row">
           <div class="field">
             <label for="baseSalary">Annual Base Salary<span class="req">*</span></label>
@@ -182,6 +195,10 @@ const UI = (function () {
     const jobTitle = document.getElementById("jobTitle").value.trim();
     const department = document.getElementById("department").value.trim();
     const workState = document.getElementById("workState").value;
+    const addlEl = document.getElementById("additionalStates");
+    const additionalStates = addlEl
+      ? Array.from(addlEl.selectedOptions).map(o => o.value).filter(Boolean)
+      : [];
     const baseSalary = parseFloat(document.getElementById("baseSalary").value) || 0;
     const totalCompRaw = document.getElementById("totalComp").value;
     const totalComp = totalCompRaw ? parseFloat(totalCompRaw) : baseSalary;
@@ -202,6 +219,7 @@ const UI = (function () {
 
     Engine.setEmpData({
       classType, currentClass, empName, jobTitle, department, workState,
+      additionalStates,
       baseSalary, totalComp, hourlyRate, payBasis, reviewerName, effectiveDate
     });
     Engine.startQuestionnaire();
@@ -415,7 +433,7 @@ const UI = (function () {
       </div>
     `).join("");
 
-    const orderedKeys = ["federal", "california", "colorado", "connecticut", "maine", "new_york_nyc", "new_york_other", "washington", "oregon"];
+    const orderedKeys = ["federal", "california", "colorado", "connecticut", "illinois", "maine", "massachusetts", "minnesota", "new_jersey", "new_york_nyc", "new_york_other", "oregon", "pennsylvania", "washington"];
     const thresholdRows = orderedKeys.map(k => {
       const t = THRESHOLDS[k];
       const eapWeekly = t.eapWeekly ? `$${fmtUSD(t.eapWeekly)}` : "—";

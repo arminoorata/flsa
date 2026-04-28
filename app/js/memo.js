@@ -85,9 +85,12 @@ const Memo = (function () {
   }
 
   function _jurisdictionNote(emp) {
-    const stateKey = getStateKey(emp.workState);
+    /* Use analysisState (most-protective for multi-state, falls back to
+       workState for single-state). */
+    const analysisState = (emp && emp.analysisState) || (emp && emp.workState) || "";
+    const stateKey = getStateKey(analysisState);
     if (stateKey === "federal") return "No additional state overlay (federal standards apply)";
-    return `${getThreshold(emp.workState).label} state law`;
+    return `${getThreshold(analysisState).label} state law`;
   }
 
   function _orgLine() {
@@ -218,13 +221,24 @@ const Memo = (function () {
       `<div class="info-row"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
 
     const isReclass = emp.classType === "reclass";
+    const primaryState = emp.primaryWorkState || emp.workState || "—";
+    const analysisState = emp.analysisState || emp.workState || primaryState;
+    const additionalStates = (emp.additionalStates && Array.isArray(emp.additionalStates))
+      ? emp.additionalStates.filter(s => s && s !== primaryState)
+      : [];
+    const isMultiState = additionalStates.length > 0;
+    const stateRowLabel = "Primary Work State:";
+    const stateRowValue = isMultiState
+      ? `${primaryState}  (analysis applied under most-protective: ${analysisState})`
+      : primaryState;
     const infoRows = [
       infoRow("Classification Type:", _classTypeLabel(emp.classType)),
       isReclass ? infoRow("Current Classification:", _currentClassLabel(emp.currentClass)) : "",
       infoRow("Name / Role:", emp.empName || "—"),
       infoRow("Job Title:", emp.jobTitle || "—"),
       infoRow("Department:", emp.department || "—"),
-      infoRow("Primary Work State:", emp.workState || "—"),
+      infoRow(stateRowLabel, stateRowValue),
+      isMultiState ? infoRow("Additional Work States:", additionalStates.join(", ")) : "",
       infoRow("Annual Base Salary:", `$${fmtUSD(emp.baseSalary)}`),
       infoRow("Total Annual Compensation:", `$${fmtUSD(emp.totalComp)}`),
       emp.hourlyRate ? infoRow("Hourly Rate:", `$${fmtUSD(emp.hourlyRate)}`) : "",
@@ -394,7 +408,19 @@ const Memo = (function () {
     lines.push(`Name / Role: ${emp.empName || "—"}`);
     lines.push(`Job Title: ${emp.jobTitle || "—"}`);
     lines.push(`Department: ${emp.department || "—"}`);
-    lines.push(`Primary Work State: ${emp.workState || "—"}`);
+    {
+      const primary = emp.primaryWorkState || emp.workState || "—";
+      const analysis = emp.analysisState || emp.workState || primary;
+      const addl = (emp.additionalStates && Array.isArray(emp.additionalStates))
+        ? emp.additionalStates.filter(s => s && s !== primary)
+        : [];
+      if (addl.length > 0) {
+        lines.push(`Primary Work State: ${primary}  (analysis applied under most-protective: ${analysis})`);
+        lines.push(`Additional Work States: ${addl.join(", ")}`);
+      } else {
+        lines.push(`Primary Work State: ${primary}`);
+      }
+    }
     lines.push(`Annual Base Salary: $${fmtUSD(emp.baseSalary)}`);
     lines.push(`Total Annual Compensation: $${fmtUSD(emp.totalComp)}`);
     if (emp.hourlyRate) lines.push(`Hourly Rate: $${fmtUSD(emp.hourlyRate)}`);

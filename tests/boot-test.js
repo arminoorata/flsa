@@ -83,6 +83,7 @@ assert(document.getElementById("payBasis"), "payBasis field missing on intake");
 assert(document.getElementById("reviewerName"), "reviewerName field missing on intake");
 assert(document.getElementById("effectiveDate"), "effectiveDate field missing on intake");
 assert(document.getElementById("currentClass"), "currentClass field missing on intake");
+assert(document.getElementById("additionalStates"), "additionalStates field missing on intake");
 
 /* Validation: missing payBasis should alert and not advance. */
 document.getElementById("classType").value = "new_hire";
@@ -110,7 +111,7 @@ assert(window.Engine.getStage() === "questions", `expected stage=questions, got 
 
 const s3Answers = {
   hce_start: "yes",
-  hce_ct_block: "acknowledged",
+  hce_state_block: "acknowledged",
   admin_salary: "yes",
   admin_biz_ops: "yes",
   admin_discretion: "yes",
@@ -195,7 +196,8 @@ window.Engine.startQuestionnaire();
 assert(window.Engine.getAllAnswers().hce_office === "yes", "answers wiped after back-to-info → forward (regression)");
 assert(window.Engine.getAllAnswers().hce_one_duty === "manages", "answers wiped after back-to-info → forward (regression)");
 
-/* Regression: CT + hce_start=no should skip hce_ct_block. */
+/* Regression: CT + hce_start=no should skip hce_state_block (was
+   hce_ct_block before generalization). */
 window.Engine.reset();
 window.Engine.setEmpData({ classType: "new_hire", jobTitle: "HR Coord", workState: "Connecticut", baseSalary: 55000, totalComp: 55000, hourlyRate: null, payBasis: "salary" });
 window.Engine.startQuestionnaire();
@@ -203,7 +205,7 @@ window.Engine.startQuestionnaire();
 window.Engine.selectOption("hce_start", "no");
 window.Engine.nextQuestion();
 const nextQ = window.Engine.currentQuestion();
-assert(nextQ && nextQ.id === "comp_role", `CT + hce_start=no should skip hce_ct_block and go to comp_role; got ${nextQ && nextQ.id}`);
+assert(nextQ && nextQ.id === "comp_role", `CT + hce_start=no should skip hce_state_block and go to comp_role; got ${nextQ && nextQ.id}`);
 
 /* New: salary auto-pre-select for high-comp employee. */
 window.Engine.reset();
@@ -331,8 +333,164 @@ while (window.Engine.getStage() === "questions" && nostateSteps < 50) {
   nostateSteps++;
 }
 const nostateRes = window.Engine.getResults();
-const nostateFlag = nostateRes.riskFlags.find(f => f.title.indexOf("no state-specific overlay encoded") !== -1);
+const nostateFlag = nostateRes.riskFlags.find(f => f.title.indexOf("Not validated for") !== -1);
 assert(nostateFlag, "non-overlay state should generate non-overlay flag");
+assert(nostateFlag && nostateFlag.severity === "medium", `non-overlay flag severity should be medium, got ${nostateFlag && nostateFlag.severity}`);
+
+/* New: multi-state Texas (no overlay) + New Jersey (overlay) — analysis
+   routes to NJ but Texas must STILL trigger a non-overlay warning,
+   because Texas is in scope. Regression for codex r4 HIGH finding. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Compliance", workState: "Texas", additionalStates: ["New Jersey"], baseSalary: 90000, totalComp: 95000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "no");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "yes");
+window.Engine.selectOption("admin_biz_ops", "production");
+window.Engine.selectOption("exec_salary", "yes");
+window.Engine.selectOption("exec_manage", "no");
+window.Engine.selectOption("prof_salary", "yes");
+window.Engine.selectOption("prof_advanced", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const txnjRes = window.Engine.getResults();
+const txFlag = txnjRes.riskFlags.find(f => f.title === "Not validated for Texas");
+assert(txFlag, "multi-state TX+NJ must still emit 'Not validated for Texas' flag (TX is in scope)");
+
+/* New: Colorado HCE uses CO state threshold $130,014, not federal
+   $107,432. $115K must NOT pass HCE; $250K must pass. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Director", workState: "Colorado", baseSalary: 100000, totalComp: 115000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+const co115 = window.Engine.getAllAnswers();
+assert(co115.hce_start === "no", `CO at $115K total comp must auto-no on HCE ($130,014 state threshold), got ${co115.hce_start}`);
+
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Director", workState: "Colorado", baseSalary: 200000, totalComp: 250000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+const co250 = window.Engine.getAllAnswers();
+assert(co250.hce_start === "yes", `CO at $250K total comp must auto-yes on HCE ($130,014 state threshold), got ${co250.hce_start}`);
+
+/* New: HCE must SKIP in CA/CO/WA (not just CT). Regression for codex r4.
+   NOTE: CO is now hceApplicable, so this only checks CA + WA. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Director", workState: "California", baseSalary: 250000, totalComp: 300000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "yes");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "yes");
+window.Engine.selectOption("admin_biz_ops", "production");
+window.Engine.selectOption("exec_salary", "yes");
+window.Engine.selectOption("exec_manage", "no");
+window.Engine.selectOption("prof_salary", "yes");
+window.Engine.selectOption("prof_advanced", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const caRes = window.Engine.getResults();
+assert(caRes.results.hce.status === "skip", `CA HCE should be skip (state rejects), got ${caRes.results.hce.status}`);
+
+/* New: critical flag must BLOCK an otherwise-exempt recommendation. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Field Director", workState: "Texas", baseSalary: 250000, totalComp: 260000, hourlyRate: null, payBasis: "day_rate" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "yes");
+window.Engine.selectOption("hce_office", "yes");
+window.Engine.selectOption("hce_one_duty", "manages");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "yes");
+window.Engine.selectOption("admin_biz_ops", "yes");
+window.Engine.selectOption("admin_discretion", "yes");
+window.Engine.selectOption("exec_salary", "yes");
+window.Engine.selectOption("exec_manage", "no");
+window.Engine.selectOption("prof_salary", "yes");
+window.Engine.selectOption("prof_advanced", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const blockRes = window.Engine.getResults();
+assert(blockRes.overall.outcome === "review", `day-rate + passing HCE/Admin must block to review, got ${blockRes.overall.outcome}`);
+assert(blockRes.overall.blockedByCritical === true, `blockedByCritical flag must be true when critical blocks an exempt outcome`);
+assert(blockRes.overall.text.indexOf("CRITICAL") !== -1, `recommendation must mention CRITICAL when blocked`);
+
+/* New: NY learned professional uses federal-only $35,568 threshold (no
+   state professional minimum). $50K passes; $30K fails. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Pharmacist", workState: "New York (rest of state)", baseSalary: 50000, totalComp: 50000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+const nyAns50 = window.Engine.getAllAnswers();
+assert(nyAns50.prof_salary === "yes", `NY prof at $50K should auto-yes (above federal $35,568); got ${nyAns50.prof_salary}`);
+
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Pharmacist", workState: "New York (rest of state)", baseSalary: 30000, totalComp: 30000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+const nyAns30 = window.Engine.getAllAnswers();
+assert(nyAns30.prof_salary === undefined, `NY prof at $30K should NOT auto-yes (below federal); got ${nyAns30.prof_salary}`);
+
+/* New: multi-state employee — analysisState rerouted to most-protective. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Remote PM", workState: "Texas", additionalStates: ["California", "Washington"], baseSalary: 90000, totalComp: 95000, hourlyRate: null, payBasis: "salary" });
+const msEmp = window.Engine.getEmpData();
+assert(msEmp.workState === "Texas", `workState must NOT mutate — should preserve user's primary pick "Texas", got ${msEmp.workState}`);
+assert(msEmp.primaryWorkState === "Texas", `primaryWorkState should equal user's primary, got ${msEmp.primaryWorkState}`);
+/* For SALARY pay basis, Washington wins: WA's EAP $80,168 + 200K HCE-reject
+   = $280,168, vs CA's $70,304 + 200K = $270,304. (We don't apply a
+   computer-salary bonus on the salary path because it would falsely
+   route non-computer salary roles to CA over WA — see codex r6 HIGH.) */
+assert(msEmp.analysisState === "Washington", `salary multi-state must route to WA (higher EAP $80,168), got ${msEmp.analysisState}`);
+
+/* Re-calling setEmpData (e.g., user edits salary after picking states)
+   must not corrupt primaryWorkState or analysisState. Regression for
+   codex r4 finding. */
+window.Engine.setEmpData({ baseSalary: 100000 });
+const msEmp2 = window.Engine.getEmpData();
+assert(msEmp2.workState === "Texas", `re-setEmpData must keep workState as user's primary, got ${msEmp2.workState}`);
+assert(msEmp2.primaryWorkState === "Texas", `re-setEmpData must keep primaryWorkState as user's primary, got ${msEmp2.primaryWorkState}`);
+assert(msEmp2.analysisState === "Washington", `re-setEmpData must keep analysisState rerouted, got ${msEmp2.analysisState}`);
+
+/* Pay-basis-aware multi-state routing: TX + CA + WA on HOURLY pay must
+   route to Washington (stricter $59.96/hr threshold), not California
+   ($58.85/hr). Regression for codex r5 HIGH finding. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Hourly Programmer", workState: "Texas", additionalStates: ["California", "Washington"], baseSalary: 0, totalComp: 0, hourlyRate: 60, payBasis: "hourly" });
+const hourlyMS = window.Engine.getEmpData();
+assert(hourlyMS.analysisState === "Washington", `hourly multi-state TX+CA+WA must route to WA (stricter $59.96/hr); got ${hourlyMS.analysisState}`);
+
+/* Pay-basis-aware multi-state routing: same states on SALARY pay must
+   route to Washington (highest EAP $80,168 + HCE-reject), since the
+   computer-salary bonus is suppressed on the salary path to prevent
+   false routing of non-computer roles to CA. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "Salary PM", workState: "Texas", additionalStates: ["California", "Washington"], baseSalary: 90000, totalComp: 95000, hourlyRate: null, payBasis: "salary" });
+const salaryMS = window.Engine.getEmpData();
+assert(salaryMS.analysisState === "Washington", `salary multi-state TX+CA+WA must route to WA; got ${salaryMS.analysisState}`);
+
+/* Regression for codex r6 HIGH: salary-paid non-computer admin in
+   TX+CA+WA at $75K must NOT recommend exempt. WA's $80,168 EAP fails;
+   CA's $70,304 passes. Routing must pick WA so admin fails. */
+window.Engine.reset();
+window.Engine.setEmpData({ classType: "new_hire", jobTitle: "HR Manager", workState: "Texas", additionalStates: ["California", "Washington"], baseSalary: 75000, totalComp: 75000, hourlyRate: null, payBasis: "salary" });
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "no");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "no");  /* $75K < WA $80,168 */
+window.Engine.selectOption("exec_salary", "no");
+window.Engine.selectOption("prof_salary", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const txcawaAdmin = window.Engine.getResults();
+assert(txcawaAdmin.overall.outcome === "non-exempt", `salary $75K admin in TX+CA+WA must be non-exempt under WA's $80,168 EAP, got ${txcawaAdmin.overall.outcome}`);
+
+window.Engine.startQuestionnaire();
+window.Engine.selectOption("hce_start", "no");
+window.Engine.selectOption("comp_role", "no");
+window.Engine.selectOption("admin_salary", "no");
+window.Engine.selectOption("exec_salary", "no");
+window.Engine.selectOption("prof_salary", "no");
+window.Engine.selectOption("sales_check", "no");
+{ let s=0; while (window.Engine.getStage()==="questions" && s++<50) window.Engine.nextQuestion(); }
+const msRes = window.Engine.getResults();
+const msFlag = msRes.riskFlags.find(f => f.title.indexOf("Multi-state employee") !== -1);
+assert(msFlag, "multi-state must produce 'Multi-state employee' risk flag");
+assert(msFlag && msFlag.severity === "high", `multi-state flag severity should be high, got ${msFlag && msFlag.severity}`);
 
 /* New: reclass exempt → non-exempt should generate critical reclass flag and helper. */
 window.Engine.reset();

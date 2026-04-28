@@ -32,8 +32,10 @@ for (const id of probe) {
   if (!s) { console.error("Missing scenario", id); errors++; continue; }
   try {
     const results = evaluateExemptions(s.answers, s.empData);
-    const overall = classifyOverall(results, s.empData);
+    /* Flags must be computed before classifyOverall so any critical
+       flag can short-circuit a passing exemption to "review". */
     const flags = generateRiskFlags(s.answers, s.empData, results);
+    const overall = classifyOverall(results, s.empData, flags);
     const html = Memo.renderHTML(s.empData, results, overall, flags);
     const text = Memo.renderText(s.empData, results, overall, flags);
     const standalone = Memo.renderStandaloneHTML(s.empData, results, overall, flags);

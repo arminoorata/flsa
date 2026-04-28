@@ -2,6 +2,47 @@
 
 All notable changes to the FLSA Classification Tool. Per spec/09-maintenance-and-extension.md §6.
 
+## [Unreleased] — 2026-04-29 (F500-readiness round)
+
+**Codex r4 review surfaced legal-correctness gaps an F500 HR/TR leader would catch in production.** Seven fixes:
+
+- **HCE skip extended to CA, CO, WA.** Previously only Connecticut blocked the federal HCE shortcut. California (Labor Code §515 "primarily engaged" 50%+ time test), Colorado (COMPS Order requires full duties test), and Washington (L&I requires full duties regardless of comp) all reject the federal HCE reduced-duties test. A $200K California analyst will no longer be incorrectly recommended as EXEMPT under HCE alone. Driven by a per-state `hceApplicable` flag in `thresholds.js` so the list stays maintainable.
+- **Critical risk flags now BLOCK an exempt recommendation.** Previously a day-rate $250K Director with admin/HCE passing produced "RECOMMEND: EXEMPT" while a flag below it said "treat as non-exempt." Now `classifyOverall` accepts riskFlags, and any critical-severity flag escalates an otherwise-passing exemption to "LEGAL REVIEW REQUIRED" with an `outcome: "review"` and `blockedByCritical: true`. Critical flags do NOT escalate non-exempt or review outcomes — those are already conservative. Engine reorder: flags computed before classifyOverall.
+- **NY learned-professional drops state salary minimum.** New York has no state EAP threshold for the learned-professional exemption — only federal $684/wk applies. Previously the tool incorrectly applied NY's $1,275/wk (NYC) or $1,199.10/wk (rest) executive/admin threshold to NY professionals, which would have falsely classified a $50K NY pharmacist or veterinarian as failing the salary test. Now uses `noStateProSalary: true` flag in the threshold record; the prof_salary question text and auto-answer respect it.
+- **Non-overlay state flag bumped from LOW to MEDIUM.** Wording sharpened to "Not validated for [state]" with explicit list of what to check (state EAP, duties test, county/city ordinances, industry carve-outs). LOW severity buried this warning for F500 users picking states like Massachusetts or Texas.
+- **Removed remaining "fintech" framing.** Three question texts referenced fintech-specific examples (a holdover from the original spec). Replaced with generic examples (software company / hospital) so the tool doesn't feel scoped to one industry.
+- **Five new state overlays: NJ, MA, IL, PA, MN.** All currently mirror federal salary level but each has its own statutory framework (NJWHL, Massachusetts Wage Act, IMWL, PMWA, MFLSA) with notes about state-specific OT or industry rules. Closes the most common F500 jurisdictional gap.
+- **Multi-state employee model.** New optional `additionalStates` intake field (multi-select). When the user selects additional states beyond the primary, `setEmpData` resolves the most-protective state (highest EAP threshold) and routes the analysis through that state's rules. Original primary is preserved as `primaryWorkState` for memo display. A HIGH-severity risk flag explicitly names all states in scope and warns about per-week OT allocation for split-state workweeks.
+
+**Test coverage**: Scenarios expanded from 19 → 22. New: 20 (Colorado high-comp HR Director — HCE must skip), 21 (NY pharmacist at $50K — passes professional via federal-only threshold), 22 (NJ Compliance Officer — state overlay resolves). Boot test adds assertions for HCE skip in CA/CO/WA, critical-flag-blocks-exempt behavior with `blockedByCritical: true`, NY professional auto-yes at $50K + auto-undefined at $30K, multi-state analysisState rerouting, multi-state risk flag generation.
+
+**Codex r4 verdict (after fixes): READY pending re-review.**
+
+**Codex r5 review found 4 more issues — fixed:**
+
+- **HIGH: Multi-state scorer was payment-basis-blind.** Previously CA could win over WA for hourly computer roles even though WA's $59.96/hr is stricter than CA's $58.85/hr (CA got the salary-annual computer bonus regardless of pay basis). Fixed by making `getMostProtectiveState(states, payBasis)` and `_restrictivenessScore(state, payBasis)` pay-basis-aware: for hourly pay, score `computerHourly` only; for salary, score `computerSalaryAnnual` and only a tiny tiebreak weight on `computerHourly`. Engine threads payBasis through. Boot test asserts hourly TX+CA+WA → WA, salary → CA.
+- **MEDIUM: HCE-reject states still walked users through the full HCE flow.** CA/WA users above the federal HCE threshold previously saw `hce_office` and `hce_one_duty`, only to have HCE silently skipped at evaluation. Generalized the Connecticut-specific block question into `hce_state_block` that fires for any `hceApplicable: false` state with state-specific copy. The detail HCE questions now skip cleanly for any HCE-reject state.
+- **MEDIUM: Federal rulemaking narrative had stale specific dates.** Replaced "September 2025 target" / "December 2025 target" specifics with a generic note pointing to the Reginfo Unified Agenda and open NPRMs (avoids hallucinating dates).
+- **NIT: Non-overlay flags multiplied for all-non-overlay multi-state cases.** A TX+FL+NV pick produced three near-identical "Not validated" warnings. Now collapses into a single deduped list: "Not validated for Texas, Florida, Nevada" with one combined body.
+
+**Test coverage**: 24 scenarios + boot test + smoke test all pass. Boot test now covers pay-basis-aware multi-state routing (hourly → WA, salary → CA), Texas+NJ multi-state non-overlay flag, CO HCE @ $115K vs $250K state-threshold semantics, HCE skip in CA/WA via the generalized block question.
+
+**Codex r6 review found 2 more issues + a grammar regression — fixed:**
+
+- **HIGH: Salary-mode multi-state routing was leaking computer-salary bonus into non-computer paths.** Reproducible failure: a salary-paid TX+CA+WA admin at $75K routed to CA (because of CA's computer-salary $122K bonus), passed admin under CA's $70,304 EAP, and recommended EXEMPT — even though WA's $80,168 EAP would correctly fail admin. Fixed by suppressing the computer-salary bonus on the salary path: now only EAP threshold + HCE-reject + strict-admin contribute to the salary-mode score. WA correctly wins TX+CA+WA salary cases.
+- **MEDIUM: Overtime Tax Proposal entry was stale.** OBBBA (One Big Beautiful Bill Act, 2025) created a qualified overtime deduction effective tax years 2025-2028. Updated the regulatory tab entry to describe the enacted deduction while preserving the original point that it does NOT change FLSA classification rules.
+- **NIT: Single-state non-overlay flag had a "standards is applied" grammar regression.** The is/are toggle was tied to nonOverlayStates.length, but "Federal FLSA standards" is always plural. Replaced with invariant "Federal FLSA standards are applied".
+
+**Codex r7 found 2 more issues — fixed:**
+
+- **HIGH: Per-exemption multi-state routing for Computer.** A salary-paid computer role in CA+WA at $100K previously routed to WA (general EAP winner) and incorrectly passed Computer under WA's $80,168 threshold, when CA's $122,573 threshold would correctly block. Added `getMostProtectiveStateForComputer(states, payBasis)` that scores by computer-specific thresholds, called separately in `evaluateExemptions` so Computer uses its own routing while EAP/admin/exec/prof/HCE use the general routing. Boot test asserts CA+WA salary computer at $100K → Computer warn → review.
+- **NIT: Restrictiveness comment listed Colorado as HCE-rejecting.** Colorado now recognizes HCE at the higher state threshold ($130,014), so the comment is updated to "CA/CT/WA" only.
+- **WA computer salary path corrected.** WA L&I (WAC 296-128-535) recognizes salary-basis computer professionals at the same EAP salary level. Previously the threshold record had `computerSalaryAnnual: null` (hourly-only). Now `computerSalaryAnnual: 80168` per the rule.
+
+**Test coverage**: 25 scenarios + boot test + smoke test all pass. New scenario 25 covers per-exemption Computer routing with CA+WA salary at $100K.
+
+**Codex review iterations: 7. Verdict trajectory: r1 BLOCKED → r2 BLOCKED → r3 READY → r4 BLOCKED → r5 BLOCKED → r6 BLOCKED → r7 BLOCKED with diminishing-severity findings.** The remaining codex concern after r7 is fundamental: full per-exemption multi-state evaluation across all six exemptions. The current per-exemption routing for Computer + composite-score routing for the EAP/HCE family handles the common cases correctly. Edge cases involving rare combinations (e.g., NY-NYC strict-admin + CA stricter-computer for the same role) remain a documented limitation.
+
 ## [Unreleased] — 2026-04-28
 
 **Total Rewards / HR practitioner upgrade.** Ten improvements driven by an in-character TR-expert review of the live tool. Each item closes a real gap between "the tool gives an answer" and "the tool produces an audit-grade classification an HR generalist can defend without separately consulting counsel for routine cases."

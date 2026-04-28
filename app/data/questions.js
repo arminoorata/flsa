@@ -16,11 +16,16 @@ function fmtUSD(n) {
 
 /* Auto-answer helpers for the EAP salary tests. The user can always
    override; the auto-applied flag in the engine ensures we only
-   propagate intake-derived answers, never user picks. */
-function _autoAdminProfExecSalary(baseSalary, threshold, payBasis) {
+   propagate intake-derived answers, never user picks.
+
+   Pass `applyStateMin = false` to use the federal threshold only — used
+   for NY professionals (no state salary minimum for learned professional
+   exemption per NYSDOL guidance). */
+function _autoAdminProfExecSalary(baseSalary, threshold, payBasis, applyStateMin) {
   if (!baseSalary || baseSalary <= 0) return undefined;
+  if (applyStateMin === undefined) applyStateMin = true;
   const fedThresh = FEDERAL_EAP_ANNUAL;
-  const stateThresh = threshold.eapAnnual || fedThresh;
+  const stateThresh = (applyStateMin && threshold.eapAnnual) ? threshold.eapAnnual : fedThresh;
   const higher = Math.max(stateThresh, fedThresh);
   const meetsLevel = baseSalary >= higher;
   /* Salary-basis precondition: only auto-pre-select "yes" when we are
@@ -84,8 +89,12 @@ function _autoComputerSalary(baseSalary, hourlyRate, threshold, payBasis) {
 }
 
 function buildQuestions(empData, answers) {
-  const stateKey = getStateKey(empData.workState);
-  const threshold = getThreshold(empData.workState);
+  /* For multi-state employees, the analysisState (most-protective)
+     drives question text and auto-answers. Falls back to workState for
+     single-state cases. */
+  const analysisState = (empData && empData.analysisState) || (empData && empData.workState) || "";
+  const stateKey = getStateKey(analysisState);
+  const threshold = getThreshold(analysisState);
   const fedThresh = FEDERAL_EAP_ANNUAL;
   const stateThresh = threshold.eapAnnual;
   const higher = Math.max(stateThresh, fedThresh);
@@ -120,36 +129,56 @@ function buildQuestions(empData, answers) {
 
   const eapSalaryText = `Applicable threshold: $${fmtUSD(higher)}/year. Entered salary: $${fmtUSD(baseSalary)}/year.`;
 
+  /* NY learned-professional has NO state salary minimum (NYSDOL guidance).
+     For NY professionals only, use the federal $684/wk ($35,568/yr) base
+     and skip the state-EAP raise that would otherwise apply. */
+  const profUsesStateMin = !threshold.noStateProSalary;
+  const profThresh = profUsesStateMin ? higher : fedThresh;
+  const profSalaryText = profUsesStateMin
+    ? eapSalaryText
+    : `Applicable threshold: $${fmtUSD(fedThresh)}/year (federal only — ${threshold.label} has no state salary minimum for the learned-professional exemption). Entered salary: $${fmtUSD(baseSalary)}/year.`;
+
   const questions = [];
 
-  /* Q1: hce_start */
+  /* Q1: hce_start. Threshold is data-driven — Colorado's HCE under
+     COMPS Order #40 is $130,014, higher than the federal $107,432.
+     The more-protective standard wins, so we use threshold.hce when
+     the state defines its own; otherwise federal. */
+  const hceThreshold = (threshold.hceApplicable && threshold.hce) ? threshold.hce : FEDERAL_HCE_THRESHOLD;
+  const hceThresholdLabel = `$${fmtUSD(hceThreshold)}/year`;
+  const hceStateClause = (threshold.hceApplicable && threshold.hce && threshold.hce > FEDERAL_HCE_THRESHOLD)
+    ? ` (${threshold.label} state HCE threshold; federal is $${fmtUSD(FEDERAL_HCE_THRESHOLD)})`
+    : "";
   questions.push({
     id: "hce_start",
     exemption: "HCE",
     stageIdx: 1,
     label: "Highly Compensated Employee (HCE) Exemption",
-    text: `Does this employee earn total annual compensation of $107,432 or more? (Current total comp entered: $${fmtUSD(totalComp)})`,
+    text: `Does this employee earn total annual compensation of ${hceThresholdLabel}${hceStateClause} or more? (Current total comp entered: $${fmtUSD(totalComp)})`,
     help: "Total comp includes salary, nondiscretionary bonuses, commissions, and other nondiscretionary compensation. Equity/stock value at grant is generally not included unless it vests and is paid annually.",
     why: "The HCE exemption uses a reduced duties test. If the employee earns above this threshold, they only need to perform one exempt duty (executive, administrative, or professional) on a customary and regular basis.",
     options: [
-      { value: "yes", label: "Yes, total comp is ≥ $107,432/year" },
-      { value: "no", label: "No, total comp is below $107,432/year" }
+      { value: "yes", label: `Yes, total comp is ≥ ${hceThresholdLabel}` },
+      { value: "no", label: `No, total comp is below ${hceThresholdLabel}` }
     ],
-    autoAnswer: totalComp >= FEDERAL_HCE_THRESHOLD ? "yes" : "no"
+    autoAnswer: totalComp >= hceThreshold ? "yes" : "no"
   });
 
-  /* Q2: hce_ct_block — conditional: only if Connecticut AND employee
-     is on the HCE-eligible branch (hce_start = yes). Per spec/05 flow
-     diagram: H1=No goes direct to C1 (comp_role); CT block sits on the
-     HCE-eligible branch. */
-  if (stateKey === "connecticut") {
+  /* Q2: hce_state_block — fires for ANY state that rejects the federal
+     HCE shortcut (hceApplicable: false). Replaces the hce_ct_block-only
+     question so CA/CT/WA users above the federal threshold get a single
+     state-specific acknowledgement instead of being walked through
+     hce_office and hce_one_duty only to have the result silently
+     skipped at evaluation time. */
+  const hceUnavailable = threshold && threshold.hceApplicable === false;
+  if (hceUnavailable) {
     questions.push({
-      id: "hce_ct_block",
+      id: "hce_state_block",
       exemption: "HCE",
       stageIdx: 1,
-      label: "Connecticut does not recognize the HCE exemption",
-      text: "This employee works in Connecticut, which does not recognize the federal HCE exemption. The employee must qualify under one of the standard exemptions (Administrative, Executive, Professional, or Computer Employee) regardless of compensation level.",
-      why: "Connecticut state law requires employees to meet the full duties test for a specific exemption. High compensation alone is not sufficient.",
+      label: `${threshold.label} does not recognize the federal HCE shortcut`,
+      text: `This employee works in ${threshold.label}, which does not recognize the federal HCE reduced-duties test. ${threshold.label === "Connecticut" ? "Connecticut does not recognize the HCE exemption at all" : `${threshold.label} requires the full duties test (typically "primarily engaged" / 50%+ time on exempt work) regardless of compensation`}. The employee must qualify under one of the standard exemptions (Administrative, Executive, Professional, or Computer Employee) on its full duties test.`,
+      why: `${threshold.label} state law applies the more-protective standard, which displaces the federal HCE shortcut. High compensation alone is not sufficient.`,
       options: [
         { value: "acknowledged", label: "Understood, continue to next exemption" }
       ],
@@ -170,7 +199,7 @@ function buildQuestions(empData, answers) {
       { value: "yes", label: "Yes, primarily office or non-manual work" },
       { value: "no", label: "No, primarily manual or physical work" }
     ],
-    skipIf: (a) => a.hce_start === "no" || stateKey === "connecticut"
+    skipIf: (a) => a.hce_start === "no" || hceUnavailable
   });
 
   /* Q4: hce_one_duty */
@@ -187,7 +216,7 @@ function buildQuestions(empData, answers) {
       { value: "advanced_knowledge", label: "Performs work requiring advanced knowledge in a field of science/learning acquired through specialized education" },
       { value: "none", label: "None of the above apply on a customary and regular basis" }
     ],
-    skipIf: (a) => a.hce_start === "no" || a.hce_office === "no" || stateKey === "connecticut"
+    skipIf: (a) => a.hce_start === "no" || a.hce_office === "no" || hceUnavailable
   });
 
   /* Q5: comp_role */
@@ -197,7 +226,7 @@ function buildQuestions(empData, answers) {
     stageIdx: 2,
     label: "Is this employee in a computer-related role?",
     text: "The computer employee exemption applies to systems analysts, programmers, software engineers, and similar roles. It does NOT apply to employees who simply use computers as tools (e.g., data entry, using spreadsheets, CAD operators, writers).",
-    help: "Common qualifying titles at a fintech company: Software Engineer, DevOps Engineer, SRE, Blockchain Developer, Protocol Engineer, Platform Engineer, QA Automation Engineer (if primarily writing test code). Common NON-qualifying roles: IT Help Desk, Hardware Technician, Data Entry, roles that just use software.",
+    help: "Common qualifying titles: Software Engineer, DevOps Engineer, SRE, Backend / Frontend / Full-Stack Engineer, Platform Engineer, Data Engineer, ML Engineer, QA Automation Engineer (if primarily writing test code). Common NON-qualifying roles: IT Help Desk, Hardware Technician, Data Entry, Manual QA Tester, roles that primarily use software as a tool rather than build it.",
     why: "This is the threshold question for the computer employee exemption. If the role is not fundamentally a computer science/engineering role, we skip this exemption entirely.",
     options: [
       { value: "yes", label: "Yes, this is a software/systems/programming role" },
@@ -280,7 +309,7 @@ function buildQuestions(empData, answers) {
     exemption: "Administrative",
     stageIdx: 3,
     label: "Is this employee's primary duty the performance of office or non-manual work directly related to the MANAGEMENT or GENERAL BUSINESS OPERATIONS of the employer (or its customers)?",
-    text: "This is the critical distinction: \"business operations\" means work that supports RUNNING the business (HR, finance, legal, compliance, marketing, IT administration, risk management, government relations), NOT work that IS the business's core product or service.\n\nFor a fintech company: building blockchain infrastructure and crypto products IS the core product. People who build the product are generally on the \"production\" side. People who run the business around the product (HR, legal, finance, ops, compliance) are on the \"admin\" side.",
+    text: "This is the critical distinction: \"business operations\" means work that supports RUNNING the business (HR, finance, legal, compliance, marketing, IT administration, risk management, government relations), NOT work that IS the business's core product or service.\n\nExample: at a software company, engineers building the product are on the \"production\" side. The HR, legal, finance, and operations staff who run the business around that product are on the \"admin\" side. At a hospital, clinical staff are production and the revenue-cycle and HR teams are admin. The same employer can have employees on both sides of the line.",
     help: "Examples that typically qualify: HR Business Partner, Finance Manager, Compliance Officer, Marketing Director, Office Manager, Legal Counsel, Procurement Lead.\n\nExamples that typically do NOT qualify: Software Engineer (production), Customer Support Agent (production), QA Tester (production), Sales Development Rep (production).",
     why: "Courts and the DOL draw a sharp line between \"running the business\" and \"making the product.\" This distinction is where most administrative exemption misclassifications happen.",
     options: [
@@ -393,13 +422,15 @@ function buildQuestions(empData, answers) {
     exemption: "Professional",
     stageIdx: 5,
     label: "Does this employee meet the salary threshold for the learned professional exemption?",
-    text: eapSalaryText,
-    why: "Same salary threshold as other EAP exemptions.",
+    text: profSalaryText,
+    why: profUsesStateMin
+      ? "Same salary threshold as other EAP exemptions."
+      : `In ${threshold.label}, the learned-professional exemption has no state-specific salary minimum. Only the federal threshold applies, which is lower than the state's executive/administrative threshold.`,
     options: [
       { value: "yes", label: "Yes" },
       { value: "no", label: "No" }
     ],
-    autoAnswer: _autoAdminProfExecSalary(baseSalary, threshold, payBasis)
+    autoAnswer: _autoAdminProfExecSalary(baseSalary, threshold, payBasis, profUsesStateMin)
   });
 
   /* Q18: prof_advanced */
@@ -426,7 +457,7 @@ function buildQuestions(empData, answers) {
     stageIdx: 5,
     label: "Does this role involve sales or business development?",
     text: "The outside sales exemption has NO salary requirement but has strict duties requirements. It only applies if the employee's primary duty is making sales or obtaining orders/contracts AWAY from the employer's place of business.",
-    help: "This exemption is rare in a fintech company but could apply to field sales roles. Inside sales (phone/email/remote selling from an office) does NOT qualify.",
+    help: "This exemption is narrow and rarely applies outside true field-sales roles. Inside sales (phone/email/remote selling from an office) does NOT qualify, regardless of revenue generated.",
     why: "We ask this to determine if the outside sales exemption should be evaluated.",
     options: [
       { value: "yes", label: "Yes, this is a sales or BD role" },

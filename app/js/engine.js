@@ -8,7 +8,9 @@ const Engine = (function () {
       empName: "",
       jobTitle: "",
       department: "",
-      workState: "",
+      workState: "",        /* Primary work state (used for analysis). */
+      additionalStates: [], /* Optional: other states the employee regularly works in. */
+      analysisState: "",    /* Computed: most-protective state across primary + additional. */
       baseSalary: 0,
       totalComp: 0,
       hourlyRate: null,
@@ -57,6 +59,29 @@ const Engine = (function () {
     if (!state.empData.totalComp) {
       state.empData.totalComp = state.empData.baseSalary;
     }
+    /* Multi-state: derive analysisState from primary + additional states.
+       Most-protective wins (highest EAP threshold). workState ALWAYS
+       holds the user's primary pick — never overwritten. analysisState
+       is what evaluator and threshold lookups should use; if there are
+       no additional states, it equals workState. primaryWorkState is a
+       redundant alias kept for memo readability. */
+    const primary = state.empData.workState || "";
+    const additional = Array.isArray(state.empData.additionalStates)
+      ? state.empData.additionalStates.filter(s => s && s !== primary)
+      : [];
+    state.empData.primaryWorkState = primary;
+    if (primary && additional.length > 0 && typeof getMostProtectiveState === "function") {
+      const all = [primary].concat(additional);
+      state.empData.analysisState = getMostProtectiveState(all, state.empData.payBasis) || primary;
+    } else {
+      state.empData.analysisState = primary;
+    }
+  }
+
+  /* For evaluator + threshold lookups: the state whose rules apply.
+     Falls back to workState if analysisState is unset (single-state). */
+  function _analysisStateFor(emp) {
+    return (emp && emp.analysisState) || (emp && emp.workState) || "";
   }
 
   function getEmpData() { return state.empData; }
@@ -230,8 +255,13 @@ const Engine = (function () {
 
   function _evaluate() {
     state.results = evaluateExemptions(state.answers, state.empData);
-    state.overall = classifyOverall(state.results, state.empData);
+    /* Risk flags must be computed BEFORE classifyOverall so any critical
+       flag (Helix day-rate, hourly incompatibility, fee-basis Executive,
+       reclass back-pay) can short-circuit an otherwise-passing exemption
+       to LEGAL REVIEW REQUIRED. Otherwise the recommendation contradicts
+       the flag below it. */
     state.riskFlags = generateRiskFlags(state.answers, state.empData, state.results);
+    state.overall = classifyOverall(state.results, state.empData, state.riskFlags);
     state.confidence = computeConfidence(state.results, state.overall, state.riskFlags, state.empData);
   }
 
