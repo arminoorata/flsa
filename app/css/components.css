@@ -265,6 +265,20 @@ html[data-theme="light"] .tab.active { color: #fff; }
   color: var(--text-muted);
 }
 
+.field .hint .link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  padding: 0;
+  margin-left: 4px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.field .hint .link-btn:hover {
+  color: var(--accent-hover, var(--accent));
+}
+
 /* ── Question card ─────────────────────────────────────────── */
 
 .q-badge {

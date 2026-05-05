@@ -68,6 +68,13 @@ All notable changes to the FLSA Classification Tool. Per spec/09-maintenance-and
 
 **Test coverage**: 28 scenarios + boot test (with 2 additional negative-assertion cleanups) + smoke test all pass.
 
+**First-round practitioner feedback (Lisa, HR/TR colleague):**
+
+- **UX: Clear-all button on additional-states multi-select.** Native `<select multiple>` requires Ctrl/Cmd-click to deselect, which Lisa hit immediately ("By accident I choose additional work state and I could not choose none to remove"). Added a "Clear all" button in the field hint that deselects every option in one click.
+- **Copy: admin_discretion help text expanded with concrete framing.** Lisa tested with an $80K California payroll admin and found the abstract regulator language hard to map to a real role. Added the example up front ("an $80K payroll admin in California typically does NOT meet this test") and tightened two of the qualifying signs per her wording: "Can commit the company to significant financial expenditures WITHOUT prior approval from a leader" and "Formulates or interprets company policies (\"interprets\" here means they can set policy or define exceptions, not just apply existing rules)". Both changes target the realistic ambiguity an HR generalist faces, not the regulatory text itself.
+
+**Test coverage**: 28 scenarios + boot test (1 new assertion for the Clear-all button) + smoke test all pass.
+
 ## [Unreleased] — 2026-04-28
 
 **Total Rewards / HR practitioner upgrade.** Ten improvements driven by an in-character TR-expert review of the live tool. Each item closes a real gap between "the tool gives an answer" and "the tool produces an audit-grade classification an HR generalist can defend without separately consulting counsel for routine cases."

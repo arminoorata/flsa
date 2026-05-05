@@ -128,7 +128,7 @@ const UI = (function () {
                 return `<option value="${escapeHtml(s)}"${sel}>${escapeHtml(s)}</option>`;
               }).join("")}
             </select>
-            <div class="hint">Hold Ctrl / Cmd to select multiple. The analysis will use the most-protective state's rules; a HIGH risk flag will note all states in scope.</div>
+            <div class="hint">Hold Ctrl / Cmd to select multiple. The analysis will use the most-protective state's rules; a HIGH risk flag will note all states in scope. <button type="button" id="additionalStates-clear" class="link-btn">Clear all</button></div>
           </div>
         </div>
 
@@ -186,6 +186,18 @@ const UI = (function () {
       if (!wrap) return;
       wrap.style.display = e.target.value === "reclass" ? "" : "none";
     });
+    /* Native <select multiple> requires Ctrl/Cmd-click to deselect, which
+       trips up users who pick a state by accident and can't undo it (real
+       feedback from the first round of HR practitioners). The Clear-all
+       button gives a single-click escape hatch. */
+    const clearAddl = document.getElementById("additionalStates-clear");
+    if (clearAddl) {
+      clearAddl.addEventListener("click", () => {
+        const sel = document.getElementById("additionalStates");
+        if (!sel) return;
+        for (const opt of sel.options) opt.selected = false;
+      });
+    }
   }
 
   function onStartClick() {

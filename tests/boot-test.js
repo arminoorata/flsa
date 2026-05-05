@@ -84,6 +84,23 @@ assert(document.getElementById("reviewerName"), "reviewerName field missing on i
 assert(document.getElementById("effectiveDate"), "effectiveDate field missing on intake");
 assert(document.getElementById("currentClass"), "currentClass field missing on intake");
 assert(document.getElementById("additionalStates"), "additionalStates field missing on intake");
+assert(document.getElementById("additionalStates-clear"), "additionalStates Clear-all button missing on intake");
+
+/* Regression for Lisa's UX feedback: clicking the Clear-all button must
+   actually deselect every option in additionalStates (native <select
+   multiple> requires Cmd-click, which trips up users). */
+{
+  const sel = document.getElementById("additionalStates");
+  /* Pre-select two options to simulate accidental picks. */
+  for (const opt of sel.options) {
+    if (opt.value === "California" || opt.value === "Washington") opt.selected = true;
+  }
+  const beforeCount = Array.from(sel.selectedOptions).length;
+  assert(beforeCount === 2, `pre-condition: 2 options should be selected, got ${beforeCount}`);
+  document.getElementById("additionalStates-clear").click();
+  const afterCount = Array.from(sel.selectedOptions).length;
+  assert(afterCount === 0, `Clear-all button should deselect all options, got ${afterCount} still selected`);
+}
 
 /* Validation: missing payBasis should alert and not advance. */
 document.getElementById("classType").value = "new_hire";
