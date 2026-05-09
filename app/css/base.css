@@ -457,6 +457,29 @@ html[data-theme="light"] .theme-icon-sun {
   color: var(--text-muted);
 }
 
+/* Right-side container holds the cross-site brand-explanation link
+   above the domain badge. Stacks at the start of the cross axis on
+   mobile; right-aligned on desktop to mirror the bar layout. */
+.footer-end {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+@media (min-width: 768px) {
+  .footer-end { align-items: flex-end; }
+}
+
+.footer-mark-link {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 200ms ease;
+}
+
+.footer-mark-link:hover { color: var(--accent); }
+
 @media (max-width: 640px) {
   .app-header-inner {
     padding: 12px 16px;
