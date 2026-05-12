@@ -164,6 +164,28 @@ input, select, textarea {
   gap: 14px;
 }
 
+.header-feedback-link {
+  display: inline-flex;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  opacity: 0.8;
+}
+
+.header-feedback-link:hover {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .header-feedback-link {
+    display: none;
+  }
+}
+
 .theme-toggle {
   position: relative;
   width: 36px;
